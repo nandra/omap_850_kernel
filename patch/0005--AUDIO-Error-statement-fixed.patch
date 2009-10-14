@@ -1,0 +1,26 @@
+From a6a13d08c1ba9f4e28a7d354137f9606afe598d5 Mon Sep 17 00:00:00 2001
+From: Marek Belisko <marek.belisko@gmail.com>
+Date: Wed, 20 May 2009 09:57:21 +0200
+Subject: [AUDIO] Error statement fixed.
+ Signed-off-by: Marek Belisko <marek.belisko@gmail.com>
+
+---
+ drivers/misc/omap850-audio.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/misc/omap850-audio.c b/drivers/misc/omap850-audio.c
+index 8831fa5..ac70dcb 100755
+--- a/drivers/misc/omap850-audio.c
++++ b/drivers/misc/omap850-audio.c
+@@ -260,7 +260,7 @@ static int audio_setup_buf(audio_stream_t * s)
+ 		audio_user_buf_t *b = &s->user_buf[frag];
+ 		b->data = kzalloc(s->fragsize, GFP_KERNEL);
+ 		if (!b->data)
+-		
++			goto err;
+ 		/* handle buffer pointers */
+ 		b->offset = 0;
+ 	}
+-- 
+1.5.6
+

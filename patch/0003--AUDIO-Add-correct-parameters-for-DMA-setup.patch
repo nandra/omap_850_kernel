@@ -1,0 +1,202 @@
+From 5ab194a2a9a157e8d775d91f63b73474f67218c9 Mon Sep 17 00:00:00 2001
+From: Marek Belisko <marek.belisko@gmail.com>
+Date: Tue, 19 May 2009 15:46:33 +0200
+Subject: [AUDIO] Add correct parameters for DMA setup.
+ Fixed linker error.
+ Signed-off-by: Marek Belisko <marek.belisko@open-nandra.com>
+
+---
+ drivers/misc/omap850-audio.c |   90 ++++++++++++-----------------------------
+ drivers/misc/omap850-syren.c |   20 +++++-----
+ 2 files changed, 37 insertions(+), 73 deletions(-)
+
+diff --git a/drivers/misc/omap850-audio.c b/drivers/misc/omap850-audio.c
+index 59bf80c..d7d9249 100755
+--- a/drivers/misc/omap850-audio.c
++++ b/drivers/misc/omap850-audio.c
+@@ -80,32 +80,15 @@
+ 
+ static spinlock_t bufindex_lock = SPIN_LOCK_UNLOCKED;
+ volatile unsigned short max_dma_count = 0;
+-
+-
+-
++/**/
+ void dump_regs(char *msg, int ch)
+ {
+ #ifdef DEBUG
+ 
+-#define DBPRINT(name, addr)     printk("%s: %s(@0x%08x) = 0x%08x\n", __FUNCTION__, name, (__u32) addr, *((volatile __u16*) addr));
++#define DBPRINT(name, addr)     printk("%s: %s(@0x%08x) = 0x%08x\n", __FUNCTION__, name, addr, *(addr));
+ 
+ 	printk("***** %s: %s *****\n", __FUNCTION__, msg);
+-#if 0
+-	printk("******** Clock settings ********\n");
+-	DBPRINT("DPLL_CTL_REG", DPLL_CTL_REG);
+-	DBPRINT("ARM_SYSST", ARM_SYSST);
+-	DBPRINT("ARM_CKCTL", ARM_CKCTL);
+-	DBPRINT("PCC_CTRL_REG", PCC_CTRL_REG);
+-	DBPRINT("ARM_RSTCT1", ARM_RSTCT1);
+-	DBPRINT("ARM_RSTCT2", ARM_RSTCT2);
+-	DBPRINT("ARM_IDLECT1", ARM_IDLECT1);
+-	DBPRINT("ARM_IDLECT2", ARM_IDLECT2);
+-	DBPRINT("ARM_IDLECT3", ARM_IDLECT3);
+-	DBPRINT("M_CTL", M_CTL);
+-	printk("******** Generic DMA settings ********\n");
+-	DBPRINT("OMAP_DMA_GCR_REG", OMAP_DMA_GCR_REG);
+-	DBPRINT("OMAP_DMA_GSCR_REG", OMAP_DMA_GSCR_REG);
+-#endif
++
+ 	printk("******** DMA channel %d settings ********\n", ch);
+ 	DBPRINT("OMAP_DMA_CSDP_REG", OMAP_DMA_CSDP_REG(ch));
+ 	DBPRINT("OMAP_DMA_CCR_REG", OMAP_DMA_CCR_REG(ch));
+@@ -181,61 +164,42 @@ static void stop_dma(audio_stream_t *s)
+ 	omap_stop_dma(s->dma_ch);
+ }
+ 
+-/*FIXME: function should be checked because lof ot params can't be
+-   used in 2.6 kernel
+-   possible to use omap_set_dma_transfer_params() fn.
+- */	  
++  
+ void audio_configure_dma_channel(audio_stream_t *s)
+ {
+ 
+ 	struct omap_dma_channel_params params;
+ 
+-
+-	// Configure the DMA channel
+-        params.data_type = OMAP_DMA_DATA_TYPE_S16; 		/* data type 16 */
+-        params.elem_count = s->fragsize;			/* two buffers, 16 bits of s->fragsize */
+-        params.frame_count = 1;					/* only one frame */
+-
+-// TODO old code:        params.src_packing = OMAP_DMA_PACK_NO;
+-// TODO old code:        params.src_burst = OMAP_DMA_BURST_NO;
+-
+-// TODO old code:        params.dest_packing = OMAP_DMA_PACK_NO;
+-// TODO old code:        params.dest_burst = OMAP_DMA_BURST_NO;
+-
+-        //params.frame_sync = OMAP_DMA_SYNC_FRAME;
+-// TODO old code:        params.frame_sync = OMAP_DMA_SYNC_ELEMENT;
+-// TODO old code:        params.priority = OMAP_DMA_PRIO_HIGH;
+-// TODO old code:        params.auto_init = 1; 					/* auto_init at end of transfer */
+-// TODO old code:        params.repeat = 1;         				/* rept operation */
+-// TODO old code:        params.end_prog = 0;  					/* reinit itself */
+-// TODO old code:        params.omap31_comp_disable = 1; 			/* OMAP3.2 or 3.0/3.1 compatible mode */
+-
+-        if (s->output) {
+-// TODO old code:        	params.sync = eEACPlay;
++	params.data_type = OMAP_DMA_DATA_TYPE_S16;	/* data type 16 */
++	params.elem_count = s->fragsize;		/* two buffers, 16 bits of s->fragsize */
++	params.frame_count = 1; /* only one frame */
++	params.sync_mode = OMAP_DMA_SYNC_ELEMENT;
++	/*FIXME: not sure if this is OK */
++	params.read_prio = DMA_CH_PRIO_HIGH;
++	params.write_prio = DMA_CH_PRIO_HIGH;
++	
++	if (s->output) {
+         	params.src_start = s->dma_buf.dma_addr;
+-// TODO old code:        	params.dest_start = EAC_ADRDR;
+-        	params.src_port = OMAP_DMA_PORT_EMIFF;
+-// TODO old code:        	params.dest_port = OMAP_DMA_PORT_TIPB;
+-        	params.src_amode = OMAP_DMA_AMODE_POST_INC;
+-// TODO old code:        	params.dest_amode = OMAP_DMA_AMODE_CONSTANT;
+-        }
+-        else {
+-// TODO old code:        	params.sync = eEACRec;
+-        	params.src_start = EAC_ADWDR;
+-// TODO old code:        	params.dest_start = s->dma_buf.dma_addr;
+-        	params.src_port = OMAP_DMA_PORT_TIPB;
+-// TODO old code:        	params.dest_port = OMAP_DMA_PORT_EMIFF;
+-        	params.src_amode = OMAP_DMA_AMODE_CONSTANT;
+-// TODO old code:        	params.dest_amode = OMAP_DMA_AMODE_POST_INC;
++		params.src_port = OMAP_DMA_PORT_EMIFF;
++		params.src_amode = OMAP_DMA_AMODE_POST_INC;
++		params.dst_start = EAC_ADRDR;
++        	params.dst_port = OMAP_DMA_PORT_TIPB;
++		params.dst_amode = OMAP_DMA_AMODE_CONSTANT;
++        } else {
++		params.src_start = EAC_ADWDR;
++		params.src_port = OMAP_DMA_PORT_TIPB;
++		params.src_amode = OMAP_DMA_AMODE_CONSTANT;
++		params.dst_start = s->dma_buf.dma_addr;
++        	params.dst_port = OMAP_DMA_PORT_EMIFF;
++		params.dst_amode = OMAP_DMA_AMODE_POST_INC;
+         }
+ 
+-// TODO old code:	params.ie = OMAP_DMA_TOUT_IRQ | OMAP_DMA_DROP_IRQ | OMAP_DMA_BLOCK_IRQ | OMAP_DMA_HALF_IRQ | OMAP_DMA_FRAME_IRQ;
+ 
+ 	params.ie = OMAP1_DMA_TOUT_IRQ | OMAP_DMA_DROP_IRQ | OMAP_DMA_BLOCK_IRQ | OMAP_DMA_HALF_IRQ | OMAP_DMA_FRAME_IRQ;
+-// TODO old code:        omap_set_dma_params(s->dma_ch, params);
++
+         omap_set_dma_params(s->dma_ch, &params);
+ 
+-//TODO old code:	dump_regs(__FUNCTION__, s->dma_ch);
++
+ 	dump_regs("audio_configure_dma_channel()", s->dma_ch);
+ }
+ 
+diff --git a/drivers/misc/omap850-syren.c b/drivers/misc/omap850-syren.c
+index 85d2a91..8a8b351 100755
+--- a/drivers/misc/omap850-syren.c
++++ b/drivers/misc/omap850-syren.c
+@@ -191,8 +191,8 @@ typedef struct
+ */
+ static void omap730_audio_init(void *dummy);
+ static void omap730_audio_shutdown(void *dummy);
+-static int omap730_audio_ioctl(struct inode *inode, struct file *file,
+-                                uint cmd, ulong arg);
++//FIXME static int omap730_audio_ioctl(struct inode *inode, struct file *file,
++//                                 uint cmd, ulong arg);
+ static int omap730_getclock(void);
+ static void omap730_setclock(int on_off);
+ 
+@@ -267,7 +267,7 @@ static audio_state_t audio_state = {
+ 	input_stream:	&input_stream,
+ 	hw_init:	omap730_audio_init,
+ 	hw_shutdown:	omap730_audio_shutdown,
+-	client_ioctl:	omap730_audio_ioctl,
++// FIXME	client_ioctl:	omap730_audio_ioctl,
+ // FIXME	sem:		__MUTEX_INITIALIZER(audio_state.sem),
+ };
+ 
+@@ -789,7 +789,7 @@ static void omap730_setclock(int on_off)
+     }
+     else 
+     {
+-  	modem_bypass(1);  	
++//FIXME   	modem_bypass(1);  	
+ 	// Disable C-Port
+ 	temp = omap730_eac_read((u16 *) EAC_CPTCTL);
+ 	temp &= ~EAC_CPTCTL_CPEN;
+@@ -1930,12 +1930,12 @@ static int __init omap730_syren_init(void)
+ 	 */
+ 
+ 	/* register devices */
+-	audio_dev_id = register_sound_dsp(&omap730_audio_fops, -1);
+-	mixer_dev_id = register_sound_mixer(NULL, -1);
++// 	audio_dev_id = register_sound_dsp(&omap730_audio_fops, -1);
++// 	mixer_dev_id = register_sound_mixer(NULL, -1);
+ 
+ #ifdef CONFIG_CEE  /* MVL-CCE */
+-        audio_ldm_device_register();
+-        audio_ldm_driver_register();
++//         audio_ldm_device_register();
++//         audio_ldm_driver_register();
+ #endif /* MVL-CCE */
+ 
+ 	printk(KERN_INFO "OMAP730 audio support initialized\n");
+@@ -1965,8 +1965,8 @@ static void __exit omap730_syren_exit(void)
+ 	//free_irq(INT_EARPHONE_JACK, NULL);
+ 	//free_irq(INT_HOOK_DETECT,NULL);
+ 	
+-	unregister_sound_dsp(audio_dev_id);
+-	unregister_sound_mixer(mixer_dev_id);
++//FIXME 	unregister_sound_dsp(audio_dev_id);
++//FIXME 	unregister_sound_mixer(mixer_dev_id);
+ }
+ 
+ module_init(omap730_syren_init);
+-- 
+1.5.6
+

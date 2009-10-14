@@ -1,0 +1,25 @@
+#!/bin/sh
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+HOSTNAME=innovator
+hostname $HOSTNAME
+echo ""
+echo "******************************************"
+echo "Starting System Init for $HOSTNAME"
+echo "******************************************"
+
+# goto the init.d directory
+cd /etc/init.d
+
+# Mount the default file systems
+mount -a # Mount the default file systems
+
+#/sbin/usbethd &
+/sbin/ifconfig 192.168.0.99 netmask 255.255.255.0
+# Configure network
+#/sbin/ifconfig lo 127.0.0.1 netmask 255.0.0.0 broadcast 127.255.255.255
+#/sbin/ifconfig usb0 128.247.75.151 netmask 255.255.254.0 broadcast 128.247.75.255
+#/sbin/route add default gw 128.247.74.1 eth0
+
+/usr/sbin/telnetd

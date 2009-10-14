@@ -1,0 +1,907 @@
+From b7a5ffa529afc81be69d3e30a4c9a5f13ee7127e Mon Sep 17 00:00:00 2001
+From: Marek Belisko <marek.belisko@open-nandra.com>
+Date: Mon, 18 May 2009 23:31:02 +0200
+Subject: [AUDIO] First compilable version. Some changes done for
+ porting to 2.6 functions. DMA setup still not correctly understand.
+
+Signed-off-by: Marek Belisko <marek.belisko@open-nandra.com>
+---
+ drivers/misc/Kconfig                 |    4 +
+ drivers/misc/Makefile                |    1 +
+ drivers/misc/omap850-audio.c         |  162 ++++++++++++++++++++--------------
+ drivers/misc/omap850-syren.c         |   81 ++++++-----------
+ include/asm-arm/arch-omap/dma.h      |   43 +++++++++-
+ include/asm-arm/arch-omap/gpio.h     |    2 +-
+ include/asm-arm/arch-omap/hardware.h |    1 +
+ include/asm-arm/arch-omap/mcbsp.h    |    2 +-
+ include/asm-arm/arch-omap/omap850.h  |  137 ++++++++++++++++++++++++++++
+ 9 files changed, 310 insertions(+), 123 deletions(-)
+
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index efbac7b..ce55b1c 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -346,4 +346,8 @@ config HTCWIZARD_GSM
+ 	help
+ 	  Provides support for GSM on HTC Wizard.
+ 
++config HTCWIZARD_AUDIO
++	tristate "HTC Wizard Audio"
++	help
++	  Provides support for Audio on HTC Wizard.
+ endif # MISC_DEVICES
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index b3871c4..0bf6a05 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -24,3 +24,4 @@ obj-$(CONFIG_EEPROM_93CX6)	+= eeprom_93cx6.o
+ obj-$(CONFIG_INTEL_MENLOW)	+= intel_menlow.o
+ obj-$(CONFIG_ENCLOSURE_SERVICES) += enclosure.o
+ obj-$(CONFIG_HTCWIZARD_GSM)	+= gsm-wizard.o
++obj-$(CONFIG_HTCWIZARD_AUDIO)	+= omap850-audio.o omap850-syren.o
+diff --git a/drivers/misc/omap850-audio.c b/drivers/misc/omap850-audio.c
+index e61e83b..59bf80c 100755
+--- a/drivers/misc/omap850-audio.c
++++ b/drivers/misc/omap850-audio.c
+@@ -33,14 +33,16 @@
+ #include <linux/delay.h>
+ #include <linux/sound.h>
+ #include <linux/soundcard.h>
++#include <linux/dma-mapping.h>
++#include <linux/interrupt.h>
+ 
+ #include <asm/hardware.h>
+ #include <asm/irq.h>
+ #include <asm/uaccess.h>
+ #include <asm/semaphore.h>
+-#include <asm/dma.h>
+-
+-#include "omap730-audio.h"
++#include <asm/arch/dma.h>
++// #include <asm/dma.h>
++#include "omap850-audio.h"
+ 
+ /*
+  * Buffering mechanism
+@@ -73,12 +75,14 @@
+ 
+ #define AUDIO_SILENCE			0x00
+ 
+-#undef DEBUG
+-//#define DEBUG
++// #undef DEBUG
++#define DEBUG
+ 
+ static spinlock_t bufindex_lock = SPIN_LOCK_UNLOCKED;
+ volatile unsigned short max_dma_count = 0;
+ 
++
++
+ void dump_regs(char *msg, int ch)
+ {
+ #ifdef DEBUG
+@@ -137,7 +141,8 @@ static void start_dma(audio_stream_t *s)
+ 	/* omap_start_dma() from the 2.6. kernel is equivalent to 
+ 	 * omap_resume_dma() from the 2.4 kernel.
+ 	 */
+-	omap_resume_dma(OMAP_DMA_REGS(s->dma_ch));
++
++	omap_start_dma(s->dma_ch);
+ 	s->dma_running = 1;
+ 
+ 	/* Audio Global Control Register 2: start sync transfer */
+@@ -173,13 +178,17 @@ static void stop_dma(audio_stream_t *s)
+ 	*((volatile u16 *) EAC_AGCTR) = temp;
+ 
+ 	/* Stop DMA channel */
+-	omap_stop_dma(OMAP_DMA_REGS(s->dma_ch));
++	omap_stop_dma(s->dma_ch);
+ }
+ 
+-	  
++/*FIXME: function should be checked because lof ot params can't be
++   used in 2.6 kernel
++   possible to use omap_set_dma_transfer_params() fn.
++ */	  
+ void audio_configure_dma_channel(audio_stream_t *s)
+ {
+-        dma_channel_params params;
++
++	struct omap_dma_channel_params params;
+ 
+ 
+ 	// Configure the DMA channel
+@@ -187,44 +196,47 @@ void audio_configure_dma_channel(audio_stream_t *s)
+         params.elem_count = s->fragsize;			/* two buffers, 16 bits of s->fragsize */
+         params.frame_count = 1;					/* only one frame */
+ 
+-        params.src_packing = OMAP_DMA_PACK_NO;
+-        params.src_burst = OMAP_DMA_BURST_NO;
++// TODO old code:        params.src_packing = OMAP_DMA_PACK_NO;
++// TODO old code:        params.src_burst = OMAP_DMA_BURST_NO;
+ 
+-        params.dest_packing = OMAP_DMA_PACK_NO;
+-        params.dest_burst = OMAP_DMA_BURST_NO;
++// TODO old code:        params.dest_packing = OMAP_DMA_PACK_NO;
++// TODO old code:        params.dest_burst = OMAP_DMA_BURST_NO;
+ 
+         //params.frame_sync = OMAP_DMA_SYNC_FRAME;
+-        params.frame_sync = OMAP_DMA_SYNC_ELEMENT;
+-        params.priority = OMAP_DMA_PRIO_HIGH;
+-        params.auto_init = 1; 					/* auto_init at end of transfer */
+-        params.repeat = 1;         				/* rept operation */
+-        params.end_prog = 0;  					/* reinit itself */
+-        params.omap31_comp_disable = 1; 			/* OMAP3.2 or 3.0/3.1 compatible mode */
++// TODO old code:        params.frame_sync = OMAP_DMA_SYNC_ELEMENT;
++// TODO old code:        params.priority = OMAP_DMA_PRIO_HIGH;
++// TODO old code:        params.auto_init = 1; 					/* auto_init at end of transfer */
++// TODO old code:        params.repeat = 1;         				/* rept operation */
++// TODO old code:        params.end_prog = 0;  					/* reinit itself */
++// TODO old code:        params.omap31_comp_disable = 1; 			/* OMAP3.2 or 3.0/3.1 compatible mode */
+ 
+         if (s->output) {
+-        	params.sync = eEACPlay;
++// TODO old code:        	params.sync = eEACPlay;
+         	params.src_start = s->dma_buf.dma_addr;
+-        	params.dest_start = EAC_ADRDR;
++// TODO old code:        	params.dest_start = EAC_ADRDR;
+         	params.src_port = OMAP_DMA_PORT_EMIFF;
+-        	params.dest_port = OMAP_DMA_PORT_TIPB;
++// TODO old code:        	params.dest_port = OMAP_DMA_PORT_TIPB;
+         	params.src_amode = OMAP_DMA_AMODE_POST_INC;
+-        	params.dest_amode = OMAP_DMA_AMODE_CONSTANT;
++// TODO old code:        	params.dest_amode = OMAP_DMA_AMODE_CONSTANT;
+         }
+         else {
+-        	params.sync = eEACRec;
++// TODO old code:        	params.sync = eEACRec;
+         	params.src_start = EAC_ADWDR;
+-        	params.dest_start = s->dma_buf.dma_addr;
++// TODO old code:        	params.dest_start = s->dma_buf.dma_addr;
+         	params.src_port = OMAP_DMA_PORT_TIPB;
+-        	params.dest_port = OMAP_DMA_PORT_EMIFF;
++// TODO old code:        	params.dest_port = OMAP_DMA_PORT_EMIFF;
+         	params.src_amode = OMAP_DMA_AMODE_CONSTANT;
+-        	params.dest_amode = OMAP_DMA_AMODE_POST_INC;
++// TODO old code:        	params.dest_amode = OMAP_DMA_AMODE_POST_INC;
+         }
+ 
+-		params.ie = OMAP_DMA_TOUT_IRQ | OMAP_DMA_DROP_IRQ | OMAP_DMA_BLOCK_IRQ | OMAP_DMA_HALF_IRQ | OMAP_DMA_FRAME_IRQ;
++// TODO old code:	params.ie = OMAP_DMA_TOUT_IRQ | OMAP_DMA_DROP_IRQ | OMAP_DMA_BLOCK_IRQ | OMAP_DMA_HALF_IRQ | OMAP_DMA_FRAME_IRQ;
+ 
+-        omap_set_dma_params(s->dma_ch, params);
++	params.ie = OMAP1_DMA_TOUT_IRQ | OMAP_DMA_DROP_IRQ | OMAP_DMA_BLOCK_IRQ | OMAP_DMA_HALF_IRQ | OMAP_DMA_FRAME_IRQ;
++// TODO old code:        omap_set_dma_params(s->dma_ch, params);
++        omap_set_dma_params(s->dma_ch, &params);
+ 
+-	dump_regs(__FUNCTION__, s->dma_ch);
++//TODO old code:	dump_regs(__FUNCTION__, s->dma_ch);
++	dump_regs("audio_configure_dma_channel()", s->dma_ch);
+ }
+ 
+ 
+@@ -252,7 +264,7 @@ void omap_audio_clear_buf(audio_stream_t * s)
+ 	
+ 	/* free DMA buffer */
+ 	if (s->dma_buf.vaddr)
+-		consistent_free(s->dma_buf.vaddr, s->fragsize * AUDIO_NBFRAGS_DMA, s->dma_buf.dma_addr);
++		dma_free_coherent(NULL, s->fragsize * AUDIO_NBFRAGS_DMA, s->dma_buf.vaddr, s->dma_buf.dma_addr);
+ 
+ 	/* free buffer structure array */
+ 	kfree(s->user_buf);
+@@ -297,7 +309,7 @@ static int audio_setup_buf(audio_stream_t * s)
+ 	/* Our actual DMA buffer
+ 	 * Let's allocate non-cached memory for DMA buffers.
+ 	 */
+-	dma_buf = consistent_alloc(GFP_KERNEL | GFP_DMA | GFP_ATOMIC, s->fragsize * AUDIO_NBFRAGS_DMA, &dma_buf_phys);
++	dma_buf = dma_alloc_coherent(NULL, s->fragsize * AUDIO_NBFRAGS_DMA, &dma_buf_phys, 0);
+ 	if (!dma_buf)
+ 	{
+ 		goto err;
+@@ -335,14 +347,14 @@ err:
+ /*
+  * Our DMA interrupt handler
+  */
+-static void audio_dma_irq(void *stream)
++static void audio_dma_irq(int lch, u16 ch_status, void *data)
+ {
+-	audio_stream_t *s = stream;
++	audio_stream_t *s = (audio_stream_t *)data;
+ 	int ch;
+-	u16 ch_status;
+-
++	
+ 	ch = s->dma_ch;
+-	ch_status = omap_dma_get_status(OMAP_DMA_REGS(ch));
++//FIXME: how to get status?
++// 	ch_status = omap_dma_get_status(OMAP_DMA_REGS(ch));
+ 
+ 	if (!s->user_buf) {
+ 		printk("OMAP730 AUDIO DMA: wow... received IRQ for channel %d but no buffer exists\n", ch);
+@@ -813,19 +825,20 @@ static int audio_ioctl( struct inode *inode, struct file *file,
+ 		count_info inf = { 0, };
+ 		audio_stream_t *s = (cmd == SNDCTL_DSP_GETOPTR) ? os : is;
+ 		dma_addr_t ptr;
+-		int bytecount, offset, flags;
++		int bytecount, offset;
++		unsigned long flags;
+ 
+ 		if ((s == is && !(file->f_mode & FMODE_READ)) ||
+ 		    (s == os && !(file->f_mode & FMODE_WRITE)))
+ 			return -EINVAL;
+ 		if (s->dma_running) {
+-			save_flags_cli(flags);
++			local_irq_save(flags);
+ 			ptr = (s->output) ? OMAP_DMA_CDAC_REG(s->dma_ch) : OMAP_DMA_CSAC_REG(s->dma_ch);
+ 			offset = ptr - s->dma_buf.dma_addr;
+ 			if (offset >= s->fragsize)
+ 				offset = s->fragsize - 4;
+ 		} else {
+-			save_flags(flags);
++			local_save_flags(flags);
+ 			offset = 0;
+ 		}
+ 		inf.ptr = s->dma_frag * s->fragsize + offset;
+@@ -833,7 +846,8 @@ static int audio_ioctl( struct inode *inode, struct file *file,
+ 		s->bytecount = -offset;
+ 		inf.blocks = s->fragcount;
+ 		s->fragcount = 0;
+-		restore_flags(flags);
++
++		local_save_flags(flags);
+ 		if (bytecount < 0)
+ 			bytecount = 0;
+ 		inf.bytes = bytecount;
+@@ -864,6 +878,7 @@ static int audio_mmap(struct file *file, struct vm_area_struct *vma)
+ 	audio_state_t *state = file->private_data;
+ 	audio_stream_t *s;
+ 	unsigned long size, vma_addr;
++
+ 	int i, ret;
+ 
+ 	if (vma->vm_pgoff != 0)
+@@ -891,7 +906,8 @@ static int audio_mmap(struct file *file, struct vm_area_struct *vma)
+ 		audio_user_buf_t *buf = &s->user_buf[i];
+ 		if (!buf->data)
+ 			continue;
+-		ret = remap_page_range(vma_addr, s->dma_buf.dma_addr,
++
++		ret = remap_pfn_range(vma, vma_addr, s->dma_buf.dma_addr,
+ 				       s->fragsize * AUDIO_NBFRAGS_DMA, vma->vm_page_prot);
+ 		if (ret)
+ 			return ret;
+@@ -994,14 +1010,14 @@ static int audio_release(struct inode *inode, struct file *file)
+ 	if (file->f_mode & FMODE_READ) {
+ 		stop_dma(state->input_stream);
+ 		audio_clear_buf(state->input_stream);
+-		omap_free_dma(OMAP_DMA_REGS(state->input_stream->dma_ch));
++		omap_free_dma(state->input_stream->dma_ch);
+ 		state->rd_ref = 0;
+ 	}
+ 
+ 	if (file->f_mode & FMODE_WRITE) {
+ 		//audio_sync(file);
+ 		audio_clear_buf(state->output_stream);
+-		omap_free_dma(OMAP_DMA_REGS(state->output_stream->dma_ch));
++		omap_free_dma(state->output_stream->dma_ch);
+ 		state->wr_ref = 0;
+ 	}
+ 
+@@ -1009,9 +1025,6 @@ static int audio_release(struct inode *inode, struct file *file)
+ 	{
+ 		if (state->hw_shutdown)
+ 			state->hw_shutdown(state);
+-#ifdef CONFIG_PM
+-		pm_unregister(state->pm_dev);
+-#endif
+ 	}
+ 
+ 	up(&state->sem);
+@@ -1025,8 +1038,7 @@ int omap_audio_attach(struct inode *inode, struct file *file,
+ 	audio_stream_t *os = state->output_stream;
+ 	int dma_ch;
+ 	int err;
+-	dma_regs_t *dma_regs;
+-	
++	int dma_regs;
+ 
+ 	down(&state->sem);
+ 
+@@ -1044,20 +1056,18 @@ int omap_audio_attach(struct inode *inode, struct file *file,
+ 
+ 	/* request DMA channel */
+ 	if (file->f_mode & FMODE_WRITE) {
+-        	err = omap_request_dma(eEACPlay, "Audio TX DMA", audio_dma_irq, 
+-			os, &dma_regs);
+-		dma_ch = OMAP_DMA_CH(dma_regs);
++		err = omap_request_dma(OMAP850_DMA_EAC_PLAY, "Audio TX DMA", audio_dma_irq, os, &dma_regs);
++		dma_ch = dma_regs;
+ 		if (err < 0)
+ 			goto out;
+ 		os->dma_ch = dma_ch;
+ 	}
+ 	if (file->f_mode & FMODE_READ) {
+-        	err = omap_request_dma(eEACRec, "Audio RX DMA", audio_dma_irq, 
+-			is, &dma_regs);
+-		dma_ch = OMAP_DMA_CH(dma_regs);
++		err = omap_request_dma(OMAP850_DMA_EAC_REC, "Audio RX DMA", audio_dma_irq, is, &dma_regs);
++		dma_ch = dma_regs;
+ 		if (err < 0) {
+ 			if (file->f_mode & FMODE_WRITE) {
+-				omap_free_dma(OMAP_DMA_REGS(os->dma_ch));
++				omap_free_dma(os->dma_ch);
+ 			}
+ 			goto out;
+ 		}
+@@ -1065,13 +1075,13 @@ int omap_audio_attach(struct inode *inode, struct file *file,
+ 	}
+ 
+ 	file->private_data	= state;
+-	file->f_op->release	= audio_release;
+-	file->f_op->write	= audio_write;
+-	file->f_op->read	= audio_read;
+-	file->f_op->mmap	= audio_mmap;
+-	file->f_op->poll	= audio_poll;
+-	file->f_op->ioctl	= audio_ioctl;
+-	file->f_op->llseek	= no_llseek;
++// 	file->f_op->release	= audio_release;
++// 	file->f_op->write	= audio_write;
++// 	file->f_op->read	= audio_read;
++// 	file->f_op->mmap	= audio_mmap;
++// 	file->f_op->poll	= audio_poll;
++// 	file->f_op->ioctl	= audio_ioctl;
++// 	file->f_op->llseek	= no_llseek;
+ 
+ 	if ((file->f_mode & FMODE_WRITE)) {
+ 		state->wr_ref = 1;
+@@ -1097,11 +1107,6 @@ int omap_audio_attach(struct inode *inode, struct file *file,
+ 
+ 	if (state->hw_init)
+ 		state->hw_init(state);
+-#ifdef CONFIG_PM
+-	state->pm_dev = pm_register(PM_SYS_DEV, 0, audio_pm_callback);
+-	if (state->pm_dev)
+-		state->pm_dev->data = state;
+-#endif
+ 
+ 	err = 0;
+ 
+@@ -1110,6 +1115,27 @@ out:
+ 	return err;
+ }
+ 
++
++/* File Ops structure */
++static struct file_operations omap850_audio_fops = {
++	/*.open will be used in main driver */
++	.release	= audio_release,
++	.write		= audio_write,
++	.read		= audio_read,
++	.mmap		= audio_mmap,
++	.poll		= audio_poll,
++	.ioctl		= audio_ioctl,
++	.owner		= THIS_MODULE
++};
++
++/* return fileoperations structure */
++struct file_operations *audio_get_fops(void)
++{
++	return &omap850_audio_fops;
++}
++
++EXPORT_SYMBOL(audio_get_fops);
++
+ MODULE_LICENSE("GPL");
+ 
+ EXPORT_SYMBOL(omap_audio_attach);
+diff --git a/drivers/misc/omap850-syren.c b/drivers/misc/omap850-syren.c
+index 0a1bc75..85d2a91 100755
+--- a/drivers/misc/omap850-syren.c
++++ b/drivers/misc/omap850-syren.c
+@@ -58,36 +58,26 @@
+ #include <asm/dma.h>
+ #include <asm/io.h>
+ #include <asm/hardware.h>
+-#include <asm/arch/ck.h>
++#include <asm/arch/clock.h>
+ 
+-#include "omap730-audio.h"
+-#ifdef MODULE	
+-#include "../gsm/csmi.h"
+-#else
+-#include "../gsm/csmi.h"
+-#endif
++#include "omap850-audio.h"
+ #include <asm/irq.h>
+-#include <asm/arch/irq.h>
+ 
+-#if defined(CONFIG_ARCH_OMAP730)
+-#include <asm/arch/omap730_config.h>
+-#include <asm/arch/perseus2.h>
+-#endif
+-//#undef CONFIG_CEE
+ #define CONFIG_CEE
+ 
+-#undef DEBUG
+-//#define DEBUG
++// #undef DEBUG
++#define DEBUG
++
+ #ifdef DEBUG
+ #define DPRINTK( x... )  printk(KERN_WARNING x)
+-//#define DPRINTK( x... )  printk( ##x )
+ #define FN_IN printk("%s start\n", __FUNCTION__)
+ #define FN_OUT(n) printk("%s end(%d)\n", __FUNCTION__, n)
++
+ #else
+ #define DPRINTK( x... )
+ #define FN_IN
+ #define FN_OUT(n)
+-#endif
++#endif /* DEBUG */
+ 
+ #define AUDIO_NAME		"OMAP730_SYREN"
+ 
+@@ -229,49 +219,36 @@ static int bt_control(int on_off);
+ static void modem_bypass(int on_off);
+ static struct device_driver audio_driver_ldm = {
+        name:      "omap730-syren",
+-       devclass:  NULL,
+        probe:     NULL,
+-       suspend:   omap730_audio_suspend,
+-       resume:    omap730_audio_resume,
+        remove:    NULL,
+ };
+ 
+ static struct device audio_device_ldm = {
+-       name: "OMAP730/TWL3016 (SYREN) Audio Codec",
+        bus_id: "I2S_Audio",
+        driver: NULL,
+-       power_state: DPM_POWER_ON,
+ };
+ 
+ static void audio_ldm_driver_register(void)
+ {
+-   extern void dsp_public_driver_register(struct device_driver *driver);
+    FN_IN;
+-   dsp_public_driver_register(&audio_driver_ldm);
+    FN_OUT(0);
+ }
+ 
+ static void audio_ldm_device_register(void)
+ {
+-   extern void dsp_public_device_register(struct device *device);
+    FN_IN;
+-   dsp_public_device_register(&audio_device_ldm);
+    FN_OUT(0);
+ }
+ 
+ static void audio_ldm_driver_unregister(void)
+ {
+-   extern void dsp_public_driver_unregister(struct device_driver *driver);
+    FN_IN;
+-   dsp_public_driver_unregister(&audio_driver_ldm);
+    FN_OUT(0);
+ }
+ 
+ static void audio_ldm_device_unregister(void)
+ {
+-   extern void dsp_public_device_unregister(struct device *device);
+    FN_IN;
+-   dsp_public_device_unregister(&audio_device_ldm);
+    FN_OUT(0);
+ }
+ #endif /* MVL-CEE */
+@@ -291,7 +268,7 @@ static audio_state_t audio_state = {
+ 	hw_init:	omap730_audio_init,
+ 	hw_shutdown:	omap730_audio_shutdown,
+ 	client_ioctl:	omap730_audio_ioctl,
+-	sem:		__MUTEX_INITIALIZER(audio_state.sem),
++// FIXME	sem:		__MUTEX_INITIALIZER(audio_state.sem),
+ };
+ 
+ struct {
+@@ -308,7 +285,7 @@ static void eac_dump(void)
+ 
+ 	#define DBPRINT(name, addr)     printk("%s: %s(@0x%08x) = 0x%08x\n", __FUNCTION__, name, (__u32) addr, *((__u16 *) addr));
+ 
+-	DBPRINT("DPLL1_CTL_REG", DPLL1_CTL_REG);
++// FIXME:	DBPRINT("DPLL1_CTL_REG", DPLL1_CTL_REG);
+ 	DBPRINT("ARM_SYSST", ARM_SYSST);
+ 	DBPRINT("ARM_CKCTL", ARM_CKCTL);
+ 	DBPRINT("PCC_CTRL_REG", PCC_CTRL_REG);
+@@ -316,8 +293,8 @@ static void eac_dump(void)
+ 	DBPRINT("ARM_IDLECT1", ARM_IDLECT1);
+ 	DBPRINT("ARM_IDLECT2", ARM_IDLECT2);
+ 	DBPRINT("ARM_IDLECT3", ARM_IDLECT3);
+-	DBPRINT("OMAP_DMA_GCR_REG", OMAP_DMA_GCR_REG);
+-	DBPRINT("PERSEUS2_MODE_1", PERSEUS2_MODE_1);
++	DBPRINT("OMAP_DMA_GCR_REG", OMAP_DMA_GCR);
++// FIXME:	DBPRINT("PERSEUS2_MODE_1", PERSEUS2_MODE_1);
+ 	DBPRINT("ULPD_SOFT_DISABLE_REQ_REG", SOFT_DISABLE_REQ_REG);
+ 	DBPRINT("ULPD_CAM_CLK_CTRL", CAM_CLK_CTRL);
+ 	DBPRINT("EAC_AGCTR", EAC_AGCTR);
+@@ -414,7 +391,7 @@ static void eac_update(void)
+ 
+ 	FN_OUT(0);
+ }
+-
++#if 0
+ static int mixer_ioctl(struct inode *inode, struct file *file, uint cmd, ulong arg)
+ {
+         int val;
+@@ -615,7 +592,7 @@ static int mixer_ioctl(struct inode *inode, struct file *file, uint cmd, ulong a
+ 	
+ 		case SNDCTL_DSP_AUDIOBT:
+ 		{
+-			*((volatile u32*) PERSEUS2_IO_CONF8) = 0x1111ddd1;
++
+ 			return 0;
+ 		}
+ 		
+@@ -700,7 +677,7 @@ static struct file_operations omap730_mixer_fops = {
+ 	ioctl:		mixer_ioctl,
+ 	owner:		THIS_MODULE
+ };
+-
++#endif /* 0 */
+ 
+ /*
+  * Audio interface
+@@ -898,21 +875,21 @@ static int omap730_audio_suspend(struct device *dev, u32 state, u32 level)
+ {
+   extern void audio_ldm_suspend(void *data);
+ 
+-  FN_IN;
++  FN_IN;/* FIXME
+   switch(level)
+   {
+      case SUSPEND_POWER_DOWN: 
+-
++*/
+        /* Turn off power to omap730_audio */
+-        
++       /* FIXME
+        audio_ldm_suspend(&audio_state);      
+        omap730_setclock(0);
+        sleep_mode_ctrl(4);
+-       vrio_mode_ctrl(0);
++       vrio_mode_ctrl(0);*/
+        //GTI_SetupAudio(0);
+ 
+-       break;
+-  }
++//        break;
++//   }
+ 
+   FN_OUT(0);
+   return 0;
+@@ -923,18 +900,19 @@ static int omap730_audio_resume(struct device *dev, u32 level)
+   extern void audio_ldm_resume(void *data);
+ 
+   FN_IN;
++/* FIXME:
+   switch(level)
+   {
+-     case RESUME_POWER_ON:
++     case RESUME_POWER_ON: */
+ 
+        /* Turn on power to omap730_audio */
+ 
+        //GTI_SetupAudio(1);
+-       omap730_setclock(1);
++   /*    omap730_setclock(1);
+        audio_ldm_resume(&audio_state);
+        vrio_mode_ctrl(1);
+        break;
+-  }
++  }*/
+ 
+   FN_OUT(0);
+   return 0;
+@@ -942,7 +920,7 @@ static int omap730_audio_resume(struct device *dev, u32 level)
+ 
+ #endif
+ 
+-
++#if 0
+ static int omap730_audio_ioctl(struct inode *inode, struct file *file,
+                                 uint cmd, ulong arg)
+ {
+@@ -1294,7 +1272,7 @@ static int omap730_audio_ioctl(struct inode *inode, struct file *file,
+ 	FN_OUT(0);
+ 	return ret;
+ }
+-
++#endif /*0*/
+ static int omap730_audio_open(struct inode *inode, struct file *file)
+ {
+ 	return omap_audio_attach(inode, file, &audio_state);
+@@ -1343,6 +1321,7 @@ static struct file_operations omap730_audio_fops = {
+ 	owner:		THIS_MODULE
+ };
+ 
++#if 0
+ static int GSM_WriteAbb(u16 Page,u16 RegisterAddr,u16 Value)
+ {
+ 	CSMI_INFO_GC_ABB_REGISTER_REQ   infoGcReq;
+@@ -1799,7 +1778,7 @@ static void modem_bypass(int on_off)
+ 	}
+ 	return;	
+ }
+-
++#endif /* 0 */
+ static int audio_dev_id, mixer_dev_id;
+ 
+ #define EAC_BPMCCFR_DEFAULT_SLAVE_NOCOMP_13BITS 0x00EC
+@@ -1952,7 +1931,7 @@ static int __init omap730_syren_init(void)
+ 
+ 	/* register devices */
+ 	audio_dev_id = register_sound_dsp(&omap730_audio_fops, -1);
+-	mixer_dev_id = register_sound_mixer(&omap730_mixer_fops, -1);
++	mixer_dev_id = register_sound_mixer(NULL, -1);
+ 
+ #ifdef CONFIG_CEE  /* MVL-CCE */
+         audio_ldm_device_register();
+@@ -1996,5 +1975,3 @@ module_exit(omap730_syren_exit);
+ MODULE_AUTHOR("Jean Pihet");
+ MODULE_DESCRIPTION("Glue audio driver for the TI OMAP730 & TI TWL3016 (Syren) CODEC");
+ MODULE_LICENSE("GPL");
+-
+-EXPORT_NO_SYMBOLS;
+diff --git a/include/asm-arm/arch-omap/dma.h b/include/asm-arm/arch-omap/dma.h
+index be0431e..dec630b 100644
+--- a/include/asm-arm/arch-omap/dma.h
++++ b/include/asm-arm/arch-omap/dma.h
+@@ -86,7 +86,12 @@
+ #define OMAP_DMA_CDEI_REG(n)		__REG16(OMAP_DMA_BASE + 0x40 * (n) + 0x1c)
+ #define OMAP_DMA_CDFI_REG(n)		__REG16(OMAP_DMA_BASE + 0x40 * (n) + 0x1e)
+ #define OMAP_DMA_CLNK_CTRL_REG(n)	__REG16(OMAP_DMA_BASE + 0x40 * (n) + 0x28)
+-
++#define OMAP_DMA_LCH_CTRL_REG(n)	__REG16(OMAP_DMA_BASE + 0x40 * (n) + 0x2a)
++#define OMAP_DMA_CSSA_L_REG(n)		__REG16(OMAP_DMA_BASE + 0x40 * (n) + 0x08)
++#define OMAP_DMA_CSSA_U_REG(n)		__REG16(OMAP_DMA_BASE + 0x40 * (n) + 0x0a)
++#define OMAP_DMA_CDSA_L_REG(n)		__REG16(OMAP_DMA_BASE + 0x40 * (n) + 0x0c)
++#define OMAP_DMA_CDSA_U_REG(n)		__REG16(OMAP_DMA_BASE + 0x40 * (n) + 0x0e)
++#define OMAP_DMA_CCR2_REG(n)		__REG16(OMAP_DMA_BASE + 0x40 * (n) + 0x24)
+ #else
+ 
+ #define OMAP_LOGICAL_DMA_CH_COUNT	32	/* REVISIT: Is this 32 + 2? */
+@@ -161,6 +166,40 @@
+ #define OMAP_DMA_USB_W2FC_TX1		30
+ #define OMAP_DMA_USB_W2FC_TX2		31
+ 
++/* omap 850 DMA devices */
++#define OMAP850_DMA_NO_DEVICE		0
++#define OMAP850_DMA_MCSI1_TX		1
++#define OMAP850_DMA_MCSI1_RX		2
++#define OMAP850_DMA_I2C_RX		3
++#define OMAP850_DMA_I2C_TX		4
++#define OMAP850_DMA_VLYNQ		5
++#define OMAP850_DMA_SHAMD5		6
++#define OMAP850_DMA_UWIRE_TX		7
++#define OMAP850_DMA_MCBSP1_TX		8
++#define OMAP850_DMA_MCBSP1_RX		9
++#define OMAP850_DMA_MCBSP2_TX		10
++#define OMAP850_DMA_MCBSP2_RX		11
++#define OMAP850_DMA_UART1_TX		12
++#define OMAP850_DMA_UART1_RX		13
++#define OMAP850_DMA_UART2_TX		14
++#define OMAP850_DMA_UART2_RX		15
++#define OMAP850_DMA_DES_IN		16
++#define OMAP850_DMA_DES_OUT		17
++#define OMAP850_DMA_SMC_TX		18
++#define OMAP850_DMA_SMC_RX		19
++#define OMAP850_DMA_CAMERA_IF_RX	20
++#define OMAP850_DMA_MMC_TX		21
++#define OMAP850_DMA_MMC_RX		22
++#define OMAP850_DMA_NAND		23
++#define OMAP850_DMA_EAC_REC		24
++#define OMAP850_DMA_EAC_PLAY		25
++#define OMAP850_DMA_USB_W2FC_RX0	26
++#define OMAP850_DMA_USB_W2FC_RX1	27
++#define OMAP850_DMA_USB_W2FC_RX2	28
++#define OMAP850_DMA_USB_W2FC_TX0	29
++#define OMAP850_DMA_USB_W2FC_TX1	30
++#define OMAP850_DMA_USB_W2FC_TX2	31
++
+ /* These are only for 1610 */
+ #define OMAP_DMA_CRYPTO_DES_IN		32
+ #define OMAP_DMA_SPI_TX			33
+@@ -379,6 +418,8 @@
+ #define DMA_CH_PRIO_HIGH		0x1
+ #define DMA_CH_PRIO_LOW			0x0 /* Def */
+ 
++#define MAX_OMAP_DMA_CHANNELS 16
++
+ /* LCD DMA block numbers */
+ enum {
+ 	OMAP_LCD_DMA_B1_TOP,
+diff --git a/include/asm-arm/arch-omap/gpio.h b/include/asm-arm/arch-omap/gpio.h
+index 904509f..16d39a4 100644
+--- a/include/asm-arm/arch-omap/gpio.h
++++ b/include/asm-arm/arch-omap/gpio.h
+@@ -28,7 +28,7 @@
+ 
+ #include <asm/hardware.h>
+ #include <asm/arch/irqs.h>
+-#include <asm/io.h>
++#include <asm/arch/gpio.h>
+ 
+ #define OMAP_MPUIO_BASE			(void __iomem *)0xfffb5000
+ 
+diff --git a/include/asm-arm/arch-omap/hardware.h b/include/asm-arm/arch-omap/hardware.h
+index d09f3c7..5a323a7 100644
+--- a/include/asm-arm/arch-omap/hardware.h
++++ b/include/asm-arm/arch-omap/hardware.h
+@@ -89,6 +89,7 @@
+ /* DPLL control registers */
+ #define DPLL_CTL		(0xfffecf00)
+ 
++
+ /* DSP clock control. Must use __raw_readw() and __raw_writew() with these */
+ #define DSP_CONFIG_REG_BASE     (0xe1008000)
+ #define DSP_CKCTL		(DSP_CONFIG_REG_BASE + 0x0)
+diff --git a/include/asm-arm/arch-omap/mcbsp.h b/include/asm-arm/arch-omap/mcbsp.h
+index d6eaa52..05a65ac 100644
+--- a/include/asm-arm/arch-omap/mcbsp.h
++++ b/include/asm-arm/arch-omap/mcbsp.h
+@@ -43,7 +43,7 @@
+ #define OMAP24XX_MCBSP1_BASE	0x48074000
+ #define OMAP24XX_MCBSP2_BASE	0x48076000
+ 
+-#if defined(CONFIG_ARCH_OMAP15XX) || defined(CONFIG_ARCH_OMAP16XX) || defined(CONFIG_ARCH_OMAP730 || defined (CONFIG_ARCH_OMAP850))
++#if defined(CONFIG_ARCH_OMAP15XX) || defined(CONFIG_ARCH_OMAP16XX) || defined(CONFIG_ARCH_OMAP730) || defined (CONFIG_ARCH_OMAP850)
+ 
+ #define OMAP_MCBSP_REG_DRR2	0x00
+ #define OMAP_MCBSP_REG_DRR1	0x02
+diff --git a/include/asm-arm/arch-omap/omap850.h b/include/asm-arm/arch-omap/omap850.h
+index 7990708..eec5188 100644
+--- a/include/asm-arm/arch-omap/omap850.h
++++ b/include/asm-arm/arch-omap/omap850.h
+@@ -104,5 +104,142 @@
+ #define OMAP850_PCC_UPLD_CTRL_BASE	(0xfffe0900)
+ #define OMAP850_PCC_UPLD_CTRL		(OMAP850_PCC_UPLD_CTRL_BASE + 0x00)
+ 
++
++#define OMAP850_EAC_BASE           0xFFFBB000                 // VA
++#define OMAP850_EAC_START          OMAP850_EAC_BASE           // PA
++#define OMAP850_EAC_SIZE           SZ_4K                      // size
++
++/* ---------------------------------------------------------------------------
++ *  OMAP730 EAC (Audio) Register definitions
++ * ---------------------------------------------------------------------------
++ */
++#define EAC_CPCFR1			(OMAP850_EAC_BASE + 0x00)
++#define EAC_CPCFR2			(OMAP850_EAC_BASE + 0x02)
++#define EAC_CPCFR3			(OMAP850_EAC_BASE + 0x04)
++#define EAC_CPCFR4			(OMAP850_EAC_BASE + 0x06)
++#define EAC_CPTCTL			(OMAP850_EAC_BASE + 0x08)
++#define EAC_CPTTADR			(OMAP850_EAC_BASE + 0x0A)
++#define EAC_CPTDATL			(OMAP850_EAC_BASE + 0x0C)
++#define EAC_CPTDATH			(OMAP850_EAC_BASE + 0x0E)
++#define EAC_CPTVSLL			(OMAP850_EAC_BASE + 0x10)
++#define EAC_CPTVSLH			(OMAP850_EAC_BASE + 0x12)
++#define EAC_MPCTR			(OMAP850_EAC_BASE + 0x20)
++#define EAC_MPMCCFR			(OMAP850_EAC_BASE + 0x22)
++#define EAC_MPACCFR			(OMAP850_EAC_BASE + 0x24)
++#define EAC_MPADLTR			(OMAP850_EAC_BASE + 0x26)
++#define EAC_MPADMTR			(OMAP850_EAC_BASE + 0x28)
++#define EAC_MPADLRR			(OMAP850_EAC_BASE + 0x2A)
++#define EAC_MPADMRR			(OMAP850_EAC_BASE + 0x2C)
++#define EAC_BPCTR			(OMAP850_EAC_BASE + 0x30)
++#define EAC_BPMCCFR			(OMAP850_EAC_BASE + 0x32)
++#define EAC_BPACCFR			(OMAP850_EAC_BASE + 0x34)
++#define EAC_BPADLTR			(OMAP850_EAC_BASE + 0x36)
++#define EAC_BPADMTR			(OMAP850_EAC_BASE + 0x38)
++#define EAC_BPADLRR			(OMAP850_EAC_BASE + 0x3A)
++#define EAC_BPADMRR			(OMAP850_EAC_BASE + 0x3C)
++#define EAC_AMSCFR			(OMAP850_EAC_BASE + 0x40)
++#define EAC_AMVCTR			(OMAP850_EAC_BASE + 0x42)
++#define EAC_AM1VCTR			(OMAP850_EAC_BASE + 0x44)
++#define EAC_AM2VCTR			(OMAP850_EAC_BASE + 0x46)
++#define EAC_AM3VCTR			(OMAP850_EAC_BASE + 0x48)
++#define EAC_ASTCTR			(OMAP850_EAC_BASE + 0x4A)
++#define EAC_APD1LCR			(OMAP850_EAC_BASE + 0x4C)
++#define EAC_APD1RCR			(OMAP850_EAC_BASE + 0x4E)
++#define EAC_APD2LCR			(OMAP850_EAC_BASE + 0x50)
++#define EAC_APD2RCR			(OMAP850_EAC_BASE + 0x52)
++#define EAC_APD3LCR			(OMAP850_EAC_BASE + 0x54)
++#define EAC_APD3RCR			(OMAP850_EAC_BASE + 0x56)
++#define EAC_APD4R			(OMAP850_EAC_BASE + 0x58)
++#define EAC_ADWDR			(OMAP850_EAC_BASE + 0x5A)
++#define EAC_ADRDR			(OMAP850_EAC_BASE + 0x5C)
++#define EAC_AGCFR			(OMAP850_EAC_BASE + 0x5E)
++#define EAC_AGCTR			(OMAP850_EAC_BASE + 0x60)
++#define EAC_AGCFR2			(OMAP850_EAC_BASE + 0x62)
++
++#define MIXER_x_A_MASK			0x007F
++#define MIXER_x_B_MASK			0x7F00
++#define	MIXER_x_A_GAIN_OFFSET		0
++#define	MIXER_x_B_GAIN_OFFSET		8
++
++#define EAC_AGCTR_RESERVED		0x07F0
++#define	EAC_AGCTR_EACPWD		0x0001
++#define	EAC_AGCTR_AUDEN			0x0002
++#define EAC_AGCTR_MCLK_EN		0x0008
++#define EAC_AGCTR_DMAWEN		0x0800
++#define EAC_AGCTR_DMAREN		0x1000
++
++#define EAC_AGCFR_RESERVED		0xF800
++#define EAC_AGCFR_B8_16			0x0200
++#define EAC_AGCFR_MN_ST			0x0400
++#define	EAC_AGCFR_AUD_CKSRC_12MHZ	0x0010
++#define	EAC_AGCFR_AUD_CKSRC_13MHZ	0x002C
++#define EAC_AGCFR_FSINT_MASK		0x00C0
++#define EAC_AGCFR_FSINT_8KHZ		0x0000
++#define EAC_AGCFR_FSINT_11KHZ		0x0040
++#define EAC_AGCFR_FSINT_22KHZ		0x0080
++#define EAC_AGCFR_FSINT_44KHZ		0x00C0
++
++#define	EAC_AMSCFR_DEFAULT_SWITCHES	0x0BE7
++//#define	EAC_AMSCFR_DEFAULT_SWITCHES	0x00A0
++
++#define	EAC_AMVCTR_RD_DMA_OFFSET	0
++#define	EAC_AMVCTR_WR_DMA_OFFSET	8
++
++#define EAC_ASTCTR_ATTEN		0x0001
++
++#define EAC_CPTCTL_RESERVED		0xFF00
++#define EAC_CPTCTL_CRST			0x0001
++#define EAC_CPTCTL_CPEN			0x0008
++#define EAC_CPTCTL_TXE			0x0020
++#define EAC_CPTCTL_RXF			0x0080
++
++#define EAC_CPCFR1_MODE_I2S		0x000C
++
++#define	EAC_CPCFR2_I2S_20BITS		0x001B
++
++#define	EAC_CPCFR3_I2S_INPUT		0x00EB
++
++#define EAC_CPCFR4_I2S_DIV7		0x0007
++
++#define	EAC_MPMCCFR_DEFAULT_MASTER_NOCOMP_16BITS	0x01EF
++
++#define EAC_MPCTR_DISABLEALL		0x0000
++#define	EAC_MPCTR_PRE_MC_16		0x0008
++#define	EAC_MPCTR_MC_EN			0x0080
++#define	EAC_MPCTR_CKEN			0x0001
++
++#define EAC_BPCTR_DISABLEALL		0x0000
++
++#define EAC_BPMCCFR_DEFAULT_SLAVE_NOCOMP_16BITS		0x00EF
++
++#define	EAC_BPCTR_PRE_MC_16		0x0008
++#define	EAC_BPCTR_MC_EN			0x0080
++#define	EAC_BPCTR_CKEN			0x0001
++
++#define	SOFT_REQ_REG_EAC12M_DPLL_REQ	0x4000
++
++#define PCC_PERIPH_SOURCE_EAC_CLK_SOURCE		0x0010
++#define	CAM_CLK_CTRL_SYSTEM_CLK_EN	0x0004
++
++/*
++ * ---------------------------------------------------------------------------
++ * OMAP730 PCC UPLD Register Definitions
++ * ---------------------------------------------------------------------------
++ */
++#define OMAP730_PCC_ULPD_BASE      0xFFFE0800                 // VA
++#define OMAP730_PCC_ULPD_START     OMAP730_PCC_ULPD_BASE      // PA
++#define OMAP730_PCC_ULPD_SIZE      SZ_2K                      // size
++
++
++#define CLOCK_CTRL_REG             (OMAP730_PCC_ULPD_BASE + 0x030)
++#define SOFT_REQ_REG               (OMAP730_PCC_ULPD_BASE + 0x034)
++#define SOFT_DISABLE_REQ_REG       (OMAP730_PCC_ULPD_BASE + 0x068)
++#define CAM_CLK_CTRL               (OMAP730_PCC_ULPD_BASE + 0x07C)
++#define PCC_CTRL_REG               (OMAP730_PCC_ULPD_BASE + 0x100)
++#define PCC_PERIPH_CLOCK_SOURCE_SEL (OMAP730_PCC_ULPD_BASE + 0x108)
++#define PCC_DBB_STATUS				(OMAP730_PCC_ULPD_BASE + 0x120)
++#define SOFT_REQ_REG               (OMAP730_PCC_ULPD_BASE + 0x034)
++
++
+ #endif /*  __ASM_ARCH_OMAP850_H */
+ 
+-- 
+1.5.6
+

@@ -1,0 +1,14 @@
+#! /bin/sh
+# poll for usb0 interface and configure it
+
+ifconfig usb0
+    ifconfig usb0 up
+    ifconfig usb0 192.168.9.10
+ifconfig usb0
+
+while [ 1 ]; do
+    sleep 1
+    ifconfig usb0 up
+    ifconfig usb0 192.168.9.10
+
+done

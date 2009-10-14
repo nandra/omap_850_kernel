@@ -1,0 +1,31 @@
+From 7bc843fd20ff9d4efadda9600878545808d831fe Mon Sep 17 00:00:00 2001
+From: Marek Belisko <marek.belisko@open-nandra.com>
+Date: Wed, 27 May 2009 18:20:04 +0200
+Subject: [AUDIO] Problem with write failing (Illegal seek) fixed.
+
+Signed-off-by: Marek Belisko <marek.belisko@open-nandra.com>
+---
+ drivers/misc/omap850-audio.c |    6 ++++--
+ 1 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/omap850-audio.c b/drivers/misc/omap850-audio.c
+index 43be1f8..6035c5e 100755
+--- a/drivers/misc/omap850-audio.c
++++ b/drivers/misc/omap850-audio.c
+@@ -435,9 +435,11 @@ static int audio_write(struct file *file, const char *buffer,
+ 	audio_stream_t *s = state->output_stream;
+ 	int chunksize, ret = 0;
+         unsigned long flags;
+-	printk(KERN_ALERT "stream name %s\n", s->name);
++
++	
+ 	printk(KERN_ALERT "audio_write: count=%d\n", count);
+-	if (ppos != &file->f_pos) {
++	
++	if (*ppos != file->f_pos) {
+ 		printk(KERN_ALERT"FPOS not ppos ppos=0x%x fpos =0x%x\n", (u32) * ppos,
+ 		       (u32) file->f_pos);
+ 		return -ESPIPE;
+-- 
+1.5.6
+

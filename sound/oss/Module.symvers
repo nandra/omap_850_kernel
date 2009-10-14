@@ -1,0 +1,4 @@
+0x00000000	omap_audio_clear_buf	sound/oss/omap850-audio	EXPORT_SYMBOL
+0x00000000	audio_ldm_suspend	sound/oss/omap850-audio	EXPORT_SYMBOL
+0x00000000	audio_ldm_resume	sound/oss/omap850-audio	EXPORT_SYMBOL
+0x00000000	omap_audio_attach	sound/oss/omap850-audio	EXPORT_SYMBOL

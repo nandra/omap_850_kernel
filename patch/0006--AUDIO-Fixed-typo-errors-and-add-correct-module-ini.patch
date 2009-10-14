@@ -1,0 +1,146 @@
+From 0c9ee344309da8ee0c5c9c6037cec4b48dc40b6b Mon Sep 17 00:00:00 2001
+From: Marek Belisko <marek.belisko@gmail.com>
+Date: Thu, 21 May 2009 15:20:28 +0200
+Subject: [AUDIO] Fixed typo errors and add correct module initialization.
+
+Signed-off-by: Marek Belisko <marek.belisko@gmail.com>
+---
+ drivers/misc/omap850-audio.c |    2 +
+ drivers/misc/omap850-syren.c |   75 ++++++++++++++----------------------------
+ 2 files changed, 27 insertions(+), 50 deletions(-)
+
+diff --git a/drivers/misc/omap850-audio.c b/drivers/misc/omap850-audio.c
+index ac70dcb..b4cbb14 100755
+--- a/drivers/misc/omap850-audio.c
++++ b/drivers/misc/omap850-audio.c
+@@ -1069,6 +1069,8 @@ struct file_operations *omap_audio_get_fops(void)
+ 	return &omap850_audio_fops;
+ }
+ 
++MODULE_LICENSE("GPL");
++
+ EXPORT_SYMBOL(omap_audio_get_fops);
+ EXPORT_SYMBOL(omap_audio_attach);
+ EXPORT_SYMBOL(omap_audio_clear_buf);
+diff --git a/drivers/misc/omap850-syren.c b/drivers/misc/omap850-syren.c
+index 4f3cc15..592ac93 100755
+--- a/drivers/misc/omap850-syren.c
++++ b/drivers/misc/omap850-syren.c
+@@ -1782,9 +1782,11 @@ static void modem_bypass(int on_off)
+ static int audio_dev_id, mixer_dev_id;
+ 
+ #define EAC_BPMCCFR_DEFAULT_SLAVE_NOCOMP_13BITS 0x00EC
+-static int __init omap850_syren_probe(void)
++static int __init omap850_syren_init(void)
+ {
+ 	u16 temp;
++	int ret = 0;
++	struct file_operations *op = NULL;
+ 	FN_IN;
+ 
+ 	eac_dump();
+@@ -1924,22 +1926,32 @@ static int __init omap850_syren_probe(void)
+ 	temp |= EAC_BPCTR_CKEN;				// Clocks running
+ 	omap850_eac_write((u16 *) EAC_BPCTR, temp);
+ 
++#ifdef CONFIG_CEE  /* MVL-CCE */
++//FIXME         audio_ldm_device_register();
++//FIXME         audio_ldm_driver_register();
++#endif /* MVL-CCE */
+ 
+ 	/*
+ 	 * Driver init
+ 	 */
++	op = &omap850_audio_fops;
++		
++	/* add missing file operations from audio */	
++	op = omap_audio_get_fops();
+ 
+-	/* register devices */
+-// 	audio_dev_id = register_sound_dsp(&omap850_audio_fops, -1);
+-// 	mixer_dev_id = register_sound_mixer(NULL, -1);
++	omap850_audio_fops.release = op->release;
++	omap850_audio_fops.write = op->write;
++	omap850_audio_fops.read	= op->read;
++	omap850_audio_fops.mmap	= op->mmap;
++	omap850_audio_fops.poll	= op->poll;
++	omap850_audio_fops.ioctl = op->ioctl;
+ 
+-#ifdef CONFIG_CEE  /* MVL-CCE */
+-//         audio_ldm_device_register();
+-//         audio_ldm_driver_register();
+-#endif /* MVL-CCE */
++	ret = register_chrdev(199, "omap850_syren", &omap850_audio_fops);
+ 
+-	printk(KERN_INFO "OMAP730 audio support initialized\n");
+-	
++	if (ret < 0)
++		goto end;
++end:
++		
+ 	//GSM_SetupAudio(0, 0x03, 0, 6);
+ 	//GTI_Output_CTRL(768);
+ 	//GSM_SetupAudio(1, 0x03, 0, 6);
+@@ -1950,11 +1962,12 @@ static int __init omap850_syren_probe(void)
+ 		if(retval = create_eac_proc())
+ 			return retval;
+ #endif
++	printk(KERN_ALERT "Module omap850-syren init\n");
+ 	FN_OUT(0);
+-	return 0;
++	return ret;
+ }
+ 
+-static void __exit omap850_syren_remove(void)
++static void __exit omap850_syren_exit(void)
+ {
+ 
+ #ifdef CONFIG_CEE  /* MVL-CCE */
+@@ -1969,44 +1982,6 @@ static void __exit omap850_syren_remove(void)
+ //FIXME 	unregister_sound_mixer(mixer_dev_id);
+ }
+ 
+-static struct miscdevice syren_miscdev = {
+-	.minor		= 199,
+-	.name		= "omap850_syren",
+-	.fops		= &omap850_audio_fops,
+-};
+-
+-
+-static int __init omap850_syren_init(void)
+-{
+-        int ret = 0;
+-	struct file_operations *op = NULL;
+-
+-	op = &omap850_audio_fops;
+-	printk(KERN_ALERT "Module omap850-syren init\n");
+-	
+-	/* add missing file operations from audio */	
+-	op = omap_audio_get_fops();
+-
+-	omap850_audio_fops.release = op->release;
+-	omap850_audio_fops.write = op->write;
+-	omap850_audio_fops.read	= op->read;
+-	omap850_audio_fops.mmap	= op->mmap;
+-	omap850_audio_fops.poll	= op->poll;
+-	omap850_audio_fops.ioctl = op->ioctl;
+-
+-	if (ret < 0)
+-		goto end;
+-	
+-	ret = register_chrdev(199, "omap850_syren", op);
+-	
+-end:
+-	return ret;
+-}
+-
+-static void __exit omap850_syren_exit(void)
+-{
+-        printk(KERN_ALERT "Module omap850-syren exit");
+-}
+ 
+ module_init(omap850_syren_init);
+ module_exit(omap850_syren_exit);
+-- 
+1.5.6
+

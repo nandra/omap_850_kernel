@@ -1,0 +1,78 @@
+From eb86c1bdc73bedf6d41fee96be93f960b26cabb2 Mon Sep 17 00:00:00 2001
+From: Marek Belisko <marek.belisko@gmail.com>
+Date: Thu, 28 May 2009 13:49:25 +0200
+Subject: Fixed writing and reading to/from EAC regs.
+
+Signed-off-by: Marek Belisko <marek.belisko@gmail.com>
+---
+ drivers/misc/omap850-audio.c |   12 +++++++-----
+ 1 files changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/misc/omap850-audio.c b/drivers/misc/omap850-audio.c
+index 6035c5e..d15d305 100755
+--- a/drivers/misc/omap850-audio.c
++++ b/drivers/misc/omap850-audio.c
+@@ -132,7 +132,7 @@ static void start_dma(audio_stream_t *s)
+ 	s->dma_running = 1;
+ 
+ 	/* Audio Global Control Register 2: start sync transfer */
+-	temp = *((volatile u16 *) EAC_AGCTR);
++	temp = omap_readw(EAC_AGCTR);
+         if (s->output) {
+ 		/* DMA write operation enabled */
+ 		temp |= EAC_AGCTR_DMAREN;
+@@ -141,7 +141,7 @@ static void start_dma(audio_stream_t *s)
+ 		/* DMA read operation enabled */
+ 		temp |= EAC_AGCTR_DMAWEN;
+ 	}
+-	*((volatile u16 *) EAC_AGCTR) = temp;
++	omap_writew(temp, EAC_AGCTR);
+ }
+ 
+ static void stop_dma(audio_stream_t *s)
+@@ -152,7 +152,7 @@ static void stop_dma(audio_stream_t *s)
+ 	s->dma_running = 0;
+ 
+ 	/* Audio Global Control Register 2: stop sync transfer */
+-	temp = *((volatile u16 *) EAC_AGCTR);
++	temp = omap_readw(EAC_AGCTR);
+         if (s->output) {
+ 		/* DMA write operation disabled */
+ 		temp &= ~EAC_AGCTR_DMAREN;
+@@ -161,7 +161,7 @@ static void stop_dma(audio_stream_t *s)
+ 		/* DMA read operation disabled */
+ 		temp &= ~EAC_AGCTR_DMAWEN;
+ 	}
+-	*((volatile u16 *) EAC_AGCTR) = temp;
++	omap_writew(temp, EAC_AGCTR);
+ 
+ 	/* Stop DMA channel */
+ 	omap_stop_dma(s->dma_ch);
+@@ -313,7 +313,7 @@ static void audio_dma_irq(int lch, u16 ch_status, void *data)
+ 	ch = s->dma_ch;
+ 
+ 	if (!s->user_buf) {
+-		printk("OMAP730 AUDIO DMA: wow... received IRQ for channel %d but no buffer exists\n", ch);
++		printk(KERN_ALERT"OMAP730 AUDIO DMA: wow... received IRQ for channel %d but no buffer exists\n", ch);
+ 		return;
+ 	}
+ 
+@@ -1009,6 +1009,7 @@ int omap_audio_attach(struct inode *inode, struct file *file,
+ 		if (err < 0)
+ 			goto out;
+ 		os->dma_ch = dma_ch;
++		printk(KERN_ALERT "DMA channel output stream = %d\n", dma_ch);
+ 	}
+ 	if (file->f_mode & FMODE_READ) {
+ 		err = omap_request_dma(OMAP850_DMA_EAC_REC, "Audio RX DMA", audio_dma_irq, is, &dma_regs);
+@@ -1020,6 +1021,7 @@ int omap_audio_attach(struct inode *inode, struct file *file,
+ 			goto out;
+ 		}
+ 		is->dma_ch = dma_ch;
++		printk(KERN_ALERT "DMA channel input stream = %d\n", dma_ch);
+ 	}
+ 
+ 	file->private_data	= state;
+-- 
+1.5.6
+
