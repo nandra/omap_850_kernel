@@ -37,7 +37,9 @@ obj-$(CONFIG_MACH_OMAP_HTCWIZARD)   	+= board-htcwizard.o \
                                           board-htcwizard-mmc.o \
                                           board-htcwizard-i2c.o \
                                           htcwizard_bt.o
-
+obj-$(CONFIG_MACH_OMAP_HTCOXYGEN)   	+= board-htcoxygen.o \
+                                          board-htcoxygen-mmc.o \
+                                         
 obj-$(CONFIG_EFB_DEBUG)	+= efb.o efb-font5x5.o
 
 ifeq ($(CONFIG_ARCH_OMAP15XX),y)

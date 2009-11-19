@@ -55,7 +55,13 @@ config MACH_OMAP_HTCWIZARD
 #	select OMAP_MCBSP
 	help
 	  HTC Wizard smartphone support (AKA QTEK 9100, ...)	
-          
+
+config MACH_OMAP_HTCOXYGEN
+	bool "HTC Oxygen"
+	depends on ARCH_OMAP850
+	help
+	  HTC Oxygen smartphone support (AKA SPV 100, ...)	
+
 config MACH_OMAP_OSK
 	bool "TI OSK Support"
 	depends on ARCH_OMAP1 && ARCH_OMAP16XX

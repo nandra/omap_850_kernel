@@ -377,6 +377,10 @@
 #include "board-htcwizard.h"
 #endif 
 
+#ifdef CONFIG_MACH_OMAP_HTCOXYGEN
+#include "board-htcoxygen.h"
+#endif
+
 #endif /* !__ASSEMBLER__ */
 
 #endif	/* __ASM_ARCH_OMAP_HARDWARE_H */
