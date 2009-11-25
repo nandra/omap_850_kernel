@@ -123,7 +123,7 @@ static void omap_init_kp(void)
 		omap_cfg_reg(E4_730_KBC2);
 		omap_cfg_reg(F4_730_KBC3);
 		omap_cfg_reg(E3_730_KBC4);
-	} else if (machine_is_omap_htcwizard()) {
+	} else if (machine_is_omap_htcwizard() || machine_is_htcoxygen()) {
 		omap_cfg_reg(E2_850_KBR0);
 		omap_cfg_reg(J7_850_KBR1);
 		omap_cfg_reg(E1_850_KBR2);

@@ -187,7 +187,7 @@ static u32 __init omap_usb0_init(unsigned nwires, unsigned is_device)
 		 */
 
 		/* This code harms wizard */
-		if (!machine_is_omap_htcwizard()) {
+		if (!machine_is_omap_htcwizard() || !machine_is_htcoxygen()) {
 			USB_TRANSCEIVER_CTRL_REG &= ~(7 << 4);
 			if (!is_device)
 				USB_TRANSCEIVER_CTRL_REG |= (3 << 1);
