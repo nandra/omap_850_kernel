@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.25-omap1
-# Sun Mar 22 18:28:25 2009
+# Fri Nov 27 20:43:51 2009
 #
 CONFIG_ARM=y
 CONFIG_SYS_SUPPORTS_APM_EMULATION=y
@@ -194,6 +194,7 @@ CONFIG_ARCH_OMAP850=y
 # OMAP Board Type
 #
 CONFIG_MACH_OMAP_HTCWIZARD=y
+# CONFIG_MACH_OMAP_HTCOXYGEN is not set
 
 #
 # OMAP CPU Speed
@@ -458,7 +459,8 @@ CONFIG_BLK_DEV_RAM_SIZE=4096
 CONFIG_MISC_DEVICES=y
 # CONFIG_EEPROM_93CX6 is not set
 # CONFIG_ENCLOSURE_SERVICES is not set
-CONFIG_HTCWIZARD_GSM=m
+# CONFIG_HTCWIZARD_GSM is not set
+CONFIG_HTCWIZARD_AUDIO=m
 # CONFIG_HAVE_IDE is not set
 
 #
