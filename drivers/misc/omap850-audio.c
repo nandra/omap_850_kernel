@@ -44,6 +44,8 @@
 // #include <asm/dma.h>
 #include "omap850-audio.h"
 
+#define OMAP_DMA_CCR_EN		(1 << 7)
+
 /*
  * Buffering mechanism
  *
@@ -183,6 +185,7 @@ void audio_configure_dma_channel(audio_stream_t *s)
 {
 
 	struct omap_dma_channel_params params;
+	u16 w;
 
 	params.data_type = OMAP_DMA_DATA_TYPE_S16;	/* data type 16 */
 	params.elem_count = s->fragsize;		/* two buffers, 16 bits of s->fragsize */
@@ -209,6 +212,18 @@ void audio_configure_dma_channel(audio_stream_t *s)
         }
 	
         omap_set_dma_params(s->dma_ch, &params);
+
+	/* We set the DMA to reinit  after each succesfull transmission */
+	w = OMAP_DMA_CCR_REG(s->dma_ch);
+	/* If DMA was already active set the end_prog bit to have
+	 * the programmed register set loaded into the active
+	 * register set.
+	 */
+	w |= 1 << 11;		/* End_prog */
+       	w |= (3 << 8);	/* Auto_init, repeat */
+
+	OMAP_DMA_CCR_REG(s->dma_ch) = w;
+
 	/* enable interrupts which are handled in irq handler */
 	omap_enable_dma_irq(s->dma_ch, OMAP_DMA_FRAME_IRQ);
 	omap_disable_dma_irq(s->dma_ch, OMAP_DMA_BLOCK_IRQ);
@@ -409,6 +424,13 @@ static void audio_dma_irq(int lch, u16 ch_status, void *data)
 
 		/* ... and for polling processes */
 		wake_up(&s->frag_wq);
+
+		/* check if dma is still on */
+		if(!(OMAP_DMA_CCR_REG(ch) & OMAP_DMA_CCR_EN) )
+		{
+		  printk(KERN_ALERT "DMA is OFF!!!! s->dma_frag:%d\n",s->dma_frag);
+		}
+
 	}
 }
 
@@ -1099,3 +1121,4 @@ EXPORT_SYMBOL(omap_audio_attach);
 EXPORT_SYMBOL(omap_audio_clear_buf);
 EXPORT_SYMBOL(audio_ldm_resume);
 EXPORT_SYMBOL(audio_ldm_suspend);
+
