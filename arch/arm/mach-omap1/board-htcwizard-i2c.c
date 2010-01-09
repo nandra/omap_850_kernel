@@ -74,7 +74,7 @@ DKB & DPAD OFF  | x  x  x  x     x  x  1  x
 */
 
 struct htcpld_chip_platform_data i2c_chip3 = {
-	.reset = 0xf6,
+	.reset = 0xfe,
 };
 struct htcpld_chip_platform_data i2c_chip4 = {
 	.reset = 0xfa,
