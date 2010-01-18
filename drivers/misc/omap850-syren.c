@@ -1836,7 +1836,7 @@ static int __init omap850_syren_init(void)
 	omap850_eac_write(EAC_AGCTR, temp);
 
 	// Audio Global Configuration Register
-	temp = omap850_eac_read(EAC_AGCFR) & EAC_AGCFR_RESERVED;
+	temp = omap850_eac_read(EAC_AGCFR) & ~EAC_AGCFR_RESERVED;
 	// stereo, 16 bit audio file
 	temp |= EAC_AGCFR_B8_16 | EAC_AGCFR_MN_ST;
 	// clock setting
@@ -1878,8 +1878,11 @@ static int __init omap850_syren_init(void)
 	 */
 
 	// CODEC Port Interface Control and Status Register
-	temp = omap850_eac_read(EAC_CPTCTL) & EAC_CPTCTL_RESERVED;
+	temp = omap850_eac_read(EAC_CPTCTL) & ~EAC_CPTCTL_RESERVED;
 	// CODEC RESET release , clear RECEIVE DATA REGISTER FULL and TRANSMIT DATA REGISTER EMPTY
+	/* after some investigations codec reset take some time -> need to add delay
+	 * because next reading of register will return different value  
+	 */
 	temp |= EAC_CPTCTL_CRST | EAC_CPTCTL_TXE | EAC_CPTCTL_RXF;
 	// C_PORT ENABLE Disabled to configure some registers
 	temp &= ~EAC_CPTCTL_CPEN;
@@ -1900,7 +1903,7 @@ static int __init omap850_syren_init(void)
 	omap850_eac_write(EAC_CPCFR4, EAC_CPCFR4_I2S_DIV7);
 
 	// CODEC Port Interface Control and Status Register
-	temp = omap850_eac_read(EAC_CPTCTL) & EAC_CPTCTL_RESERVED;
+	temp = omap850_eac_read(EAC_CPTCTL) & ~EAC_CPTCTL_RESERVED;
 	// C_PORT ENABLE Enabled
 	temp |= EAC_CPTCTL_CPEN;
 	omap850_eac_write(EAC_CPTCTL, temp);
