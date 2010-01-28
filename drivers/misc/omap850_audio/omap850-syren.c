@@ -64,10 +64,15 @@
 #include "omap850-audio.h"
 #include <asm/irq.h>
 #include <linux/miscdevice.h>
+#include "syren_spi.h"
+//#include "omap730_syren.h"
+
 #define CONFIG_CEE
 
-#undef DEBUG
-// #define DEBUG
+//undef DEBUG
+#define DEBUG
+
+void syren_clocks_on(void);
 
 #ifdef DEBUG
 #define DPRINTK( x... )  printk(KERN_WARNING x)
@@ -285,21 +290,22 @@ static void eac_dump(void)
 #ifdef DEBUG
 
 	#define DBPRINT(name, addr) \
-	printk(KERN_ALERT "%s: %s(@0x%08x), val:0x%x04\n", __FUNCTION__, name, addr, omap_readw(name));
+	printk(KERN_ALERT "%s: %s(@0x%08x), 0x%04x\n", __FUNCTION__, name, addr, omap_readw(addr));\
+	udelay(1000);
 
 
 // FIXME:	DBPRINT("DPLL1_CTL_REG", DPLL1_CTL_REG);
-	DBPRINT("ARM_SYSST", ARM_SYSST);
-	DBPRINT("ARM_CKCTL", ARM_CKCTL);
-	DBPRINT("PCC_CTRL_REG", PCC_CTRL_REG);
-	DBPRINT("ARM_RSTCT2", ARM_RSTCT2);
-	DBPRINT("ARM_IDLECT1", ARM_IDLECT1);
-	DBPRINT("ARM_IDLECT2", ARM_IDLECT2);
-	DBPRINT("ARM_IDLECT3", ARM_IDLECT3);
-	DBPRINT("OMAP_DMA_GCR_REG", OMAP_DMA_GCR);
+//	DBPRINT("ARM_SYSST", ARM_SYSST);
+//	DBPRINT("ARM_CKCTL", ARM_CKCTL);
+//	DBPRINT("PCC_CTRL_REG", PCC_CTRL_REG);
+//	DBPRINT("ARM_RSTCT2", ARM_RSTCT2);
+//	DBPRINT("ARM_IDLECT1", ARM_IDLECT1);
+//	DBPRINT("ARM_IDLECT2", ARM_IDLECT2);
+//	DBPRINT("ARM_IDLECT3", ARM_IDLECT3);
+//	DBPRINT("OMAP_DMA_GCR_REG", OMAP_DMA_GCR);
 // FIXME:	DBPRINT("PERSEUS2_MODE_1", PERSEUS2_MODE_1);
-	DBPRINT("ULPD_SOFT_DISABLE_REQ_REG", SOFT_DISABLE_REQ_REG);
-	DBPRINT("ULPD_CAM_CLK_CTRL", CAM_CLK_CTRL);
+//	DBPRINT("ULPD_SOFT_DISABLE_REQ_REG", SOFT_DISABLE_REQ_REG);
+//	DBPRINT("ULPD_CAM_CLK_CTRL", CAM_CLK_CTRL);
 	DBPRINT("EAC_AGCTR", EAC_AGCTR);
 	DBPRINT("EAC_AGCFR", EAC_AGCFR);
 	DBPRINT("EAC_AGCFR2", EAC_AGCFR2);
@@ -313,12 +319,12 @@ static void eac_dump(void)
 	DBPRINT("EAC_AM2VCTR", EAC_AM2VCTR);
 	DBPRINT("EAC_AM3VCTR", EAC_AM3VCTR);
 	DBPRINT("EAC_AMSCFR", EAC_AMSCFR);
-	DBPRINT("EAC_MPCTR", EAC_MPCTR);
-	DBPRINT("EAC_MPMCCFR", EAC_MPMCCFR);
-	DBPRINT("EAC_BPCTR", EAC_BPCTR);
-	DBPRINT("EAC_BPMCCFR", EAC_BPMCCFR);
-	DBPRINT("SOFT_REQ_REG", SOFT_REQ_REG);
-	DBPRINT("PCC_PERIPH_CLOCK_SOURCE_SEL", PCC_PERIPH_CLOCK_SOURCE_SEL);
+//	DBPRINT("EAC_MPCTR", EAC_MPCTR);
+//	DBPRINT("EAC_MPMCCFR", EAC_MPMCCFR);
+//	DBPRINT("EAC_BPCTR", EAC_BPCTR);
+//	DBPRINT("EAC_BPMCCFR", EAC_BPMCCFR);
+//	DBPRINT("SOFT_REQ_REG", SOFT_REQ_REG);
+//	DBPRINT("PCC_PERIPH_CLOCK_SOURCE_SEL", PCC_PERIPH_CLOCK_SOURCE_SEL);
 #endif
 }
 
@@ -344,13 +350,13 @@ static void eac_update(void)
         u16 volume, line;
 	u16 mixer1_vol, mixer2_vol, mixer3_vol;
 	u16 reg1_vol, reg2_vol, reg3_vol;
-	int clock_enabled;
+	//int clock_enabled;
 
 	FN_IN;
 
 	// Enable the EAC clock if needed
-	if (!(clock_enabled = omap850_getclock()))
-		omap850_setclock(1);
+//	if (!(clock_enabled = omap850_getclock()))
+//		omap850_setclock(1);
 
 	// PCM -> Mixer 2B & 3B
 	// LINE & MIC -> Mixer 1A & 3A
@@ -389,8 +395,8 @@ static void eac_update(void)
 	}
 
 	// Disable the EAC clock if it was disabled when entering the function
-	if (!clock_enabled)
-		omap850_setclock(0);
+	//if (!clock_enabled)
+	//	omap850_setclock(0);
 
 	FN_OUT(0);
 }
@@ -1278,6 +1284,7 @@ static int omap850_audio_ioctl(struct inode *inode, struct file *file,
 #endif /*0*/
 static int omap850_audio_open(struct inode *inode, struct file *file)
 {
+	//syren_clocks_on();
 	return omap_audio_attach(inode, file, &audio_state);
 }
 
@@ -1784,6 +1791,154 @@ static void modem_bypass(int on_off)
 #endif /* 0 */
 static int audio_dev_id, mixer_dev_id;
 
+static void syren_audio_init(void)
+{
+	        FN_IN;
+		        /* p. 5-15, syren master clock = 13Mhz, not 32khz */
+		//      syren_write_reg(0, SYREN_TOGBR2, SYREN_TOGBR2_ACTS, SYREN_TOGBR2_ACTS);
+		        syren_direct_io(0, SYREN_TOGBR2, SYREN_TOGBR2_ACTS & SYREN_TOGBR2_ACTS,1);
+			        //syren_write_regite_reg
+			        /* p. 5-38, set sample rate to 44.1khz */
+			//      syren_write_reg(1, SYREN_VAUDCTRL, SYREN_VAUDCTRL_SRW_441, SYREN_VAUDCTRL_SR_MASK);
+			        syren_direct_io(1, SYREN_VAUDCTRL, SYREN_VAUDCTRL_SRW_441 & SYREN_VAUDCTRL_SR_MASK,1);
+
+				        /* p. 5-40, set gain to 0db */
+				//      syren_write_reg(1, SYREN_VAUSCTRL, 0, 0xffff);
+				        syren_direct_io(1, SYREN_VAUSCTRL, 0 & 0xffff, 1);
+
+					        /* p. 5-39, set audio outputs to headset L/R and speaker*/
+					//      syren_write_reg(1, SYREN_VAUOCTRL, SYREN_VAUOCTRL_SPK | SYREN_VAUOCTRL_HS,
+					//                                      SYREN_VAUOCTRL_AUDIO_MASK);
+					        syren_direct_io(1, SYREN_VAUOCTRL, (SYREN_VAUOCTRL_SPK | SYREN_VAUOCTRL_HS) & SYREN_VAUOCTRL_AUDIO_MASK,1);
+
+}
+
+void syren_clocks_on(void)
+{
+	        FN_IN;
+		        /* p. 5-15, enable audio codec clock in PWDNREG */
+		//      syren_write_reg(0, SYREN_TOGBR2, SYREN_TOGBR2_AUDS, SYREN_TOGBR2_AUDS);
+		        syren_direct_io(0, SYREN_TOGBR2, SYREN_TOGBR2_AUDS & SYREN_TOGBR2_AUDS, 1);
+
+			        /* p. 5-41, power up audio PLL */
+			//      syren_write_reg(1, SYREN_VAUDPLL, SYREN_VAUDPLL_AUPLLON, SYREN_VAUDPLL_AUPLLON);
+			        syren_direct_io(1, SYREN_VAUDPLL, SYREN_VAUDPLL_AUPLLON & SYREN_VAUDPLL_AUPLLON, 1);
+
+				        /* from TI sysboot sample code - delay 0.000157 sec here */
+				        udelay(SYREN_DELAY_USEC);
+
+					        /* p. 5-41, activate I2S interface */
+					//      syren_write_reg(1, SYREN_VAUDPLL, SYREN_VAUDPLL_AUPLLON | SYREN_VAUDPLL_I2SON,
+					//                                                              SYREN_VAUDPLL_AUPLLON | SYREN_VAUDPLL_I2SON);
+					        syren_direct_io(1, SYREN_VAUDPLL, (SYREN_VAUDPLL_AUPLLON | SYREN_VAUDPLL_I2SON) & (SYREN_VAUDPLL_AUPLLON | SYREN_VAUDPLL_I2SON),1);
+}
+
+void syren_clocks_off(void)
+{
+	        FN_IN;
+		        /* p. 5-15, disable audio codec clock in PWDNREG */
+		//      syren_write_reg(0, SYREN_TOGBR2, SYREN_TOGBR2_AUDR, SYREN_TOGBR2_AUDR);
+		        syren_direct_io(0, SYREN_TOGBR2, SYREN_TOGBR2_AUDR & SYREN_TOGBR2_AUDR, 1);
+
+			        /* p. 5-41, power down audio PLL */
+			//      syren_write_reg(1, SYREN_VAUDPLL, 0, SYREN_VAUDPLL_AUPLLON);
+			        syren_direct_io(1, SYREN_VAUDPLL, 0 & SYREN_VAUDPLL_AUPLLON, 1);
+
+				        /* from TI sysboot sample code - delay 0.000157 sec here */
+				        udelay(SYREN_DELAY_USEC);
+
+					        /* p. 5-41, deactivate I2S interface */
+					//      syren_write_reg(1, SYREN_VAUDPLL, 0, SYREN_VAUDPLL_AUPLLON | SYREN_VAUDPLL_I2SON);
+					        syren_direct_io(1, SYREN_VAUDPLL, 0 & (SYREN_VAUDPLL_AUPLLON | SYREN_VAUDPLL_I2SON), 1);
+
+}
+
+#define OMAP730_UPLD_PCC_POWER_CTRL             (OMAP730_PCC_UPLD_CTRL_BASE+0x050)
+#define OMAP730_UPLD_PCC_CAM_CLK_CTRL   (OMAP730_PCC_UPLD_CTRL_BASE+0x07c)
+
+
+
+static void eac_init(void)
+{
+	/* p.650 - Get EAC signals - CSYNC, CSCLK, CDO */
+	set_bit_range_32(OMAP730_IO_CONF_4, 23, 21, 0);
+
+	/* p.649 - Get EAC CDI signal */
+	set_bit_range_32(OMAP730_IO_CONF_4, 27, 25, 0);
+
+	/* p.649 - Get EAC MCLK signal */
+	set_bit_range_32(OMAP730_IO_CONF_4, 31, 29, 0);
+
+	/* p.1641 - system clock enabled */
+	set_bit_range_32(OMAP730_UPLD_PCC_CAM_CLK_CTRL, 2, 2, 1);
+
+	/* p.659 - Set GPIO 145 to CLK_13M_REQ */
+	set_bit_range_32(OMAP730_IO_CONF_10, 31, 29, 0);
+
+	/* XXX eac - disable codec port - TI sysboot does not do
+	    * this but i don't think unload/reload will work without it */
+	printk("EAC_CPTCTL:%x\n", omap_readw(EAC_CPTCTL));
+	set_bit_range_16(EAC_CPTCTL, 3, 3, 0);
+	printk("EAC_CPTCTL:%x\n", omap_readw(EAC_CPTCTL));
+
+
+	/* p. 15-97 - set audio clock source to 13Mhz */
+	set_bit_range_16(EAC_AGCFR, 5, 4, 0x2);
+
+	/* p. 15-94 - close K1 switch (audio playback)
+	    *            and K5 switch (audio record from mic)
+	     */
+	// XXX all input switches closed, still nothing -- syren?
+	set_bit_range_16(EAC_AMSCFR, 11, 0, (1<<0)|(1<<4)|(1<<5)|(1<<6)|(1<<7));
+
+	/* p. 15-83 - select I2S mode */
+	set_bit_range_16(EAC_CPCFR1, 2, 0, 0x4);
+	/* p. 15-83 - 2 time slots per frame (I2S) */
+	set_bit_range_16(EAC_CPCFR1, 7, 3, 0x1);
+
+	/* p. 15-84 - 20 serial clock cycle time slot length */
+	set_bit_range_16(EAC_CPCFR2, 2, 0, 0x3);
+	/* p. 15-84 - 16 data bits per time slot */
+	set_bit_range_16(EAC_CPCFR2, 5, 3, 0x1);
+	/* p. 15-84 - time slot 0 length same as TSLL */
+	set_bit_range_16(EAC_CPCFR2, 7, 6, 0x0);
+
+	/* p. 15-99 - FSINT2 is 44.1khz */
+	set_bit_range_16(EAC_AGCFR2, 2, 0, 0x3);
+
+//	omap850_eac_write(EAC_AMVCTR, (DMA_DEFAULT_VOLUME << EAC_AMVCTR_RD_DMA_OFFSET) | (DMA_DEFAULT_VOLUME << EAC_AMVCTR_WR_DMA_OFFSET));
+	/* set default volume */
+	//set_bit_range_16(EAC_AMVCTR, 15, 0, (0xe7 << EAC_AMVCTR_RD_DMA_OFFSET) | (0xe7 << EAC_AMVCTR_WR_DMA_OFFSET));
+	
+	omap_writew(0x3099, EAC_AMVCTR);
+	//eac_local.volume = 0x99;
+	//eac_local.line = eac_local.volume;
+
+	//eac_update();
+	omap_writew(0x3067, EAC_AM1VCTR);                                                                                                                      
+	omap_writew(0x3067, EAC_AM2VCTR);                                                                                                                      
+	omap_writew(0x3000, EAC_AM3VCTR);   
+	printk("EAC_AMVCTR : 0x%04x\n", omap_readw(EAC_AMVCTR));	
+	/* p. 15-97 - little endian audio data */
+	set_bit_range_16(EAC_AGCFR, 8, 8, 0);
+	/* p. 15-97 - 16-bit audio data */
+	set_bit_range_16(EAC_AGCFR, 9, 9, 1);
+	/* p. 15-97 - stereo audio data */
+	set_bit_range_16(EAC_AGCFR, 10, 10, 1);
+
+	/* p. 15-85 - CP_SCLK is an input */
+	set_bit_range_16(EAC_CPCFR3, 1, 1, 1);
+	/* p. 15-85 - CP_SYNC is an input */
+	set_bit_range_16(EAC_CPCFR3, 0, 0, 1);
+
+	/* p. 15-98 - enable audio */
+	set_bit_range_16(EAC_AGCTR, 1, 1, 1);
+
+	/* p. 15-86 - enable codec port (disables access to config regs) */
+	set_bit_range_16(EAC_CPTCTL, 3, 3, 1);
+}
+
+
 #define EAC_BPMCCFR_DEFAULT_SLAVE_NOCOMP_13BITS 0x00EC
 static int __init omap850_syren_init(void)
 {
@@ -1794,7 +1949,7 @@ static int __init omap850_syren_init(void)
 	FN_IN;
 	
 	eac_dump();
-
+	eac_init();
 	/*
 	 * Pins multiplexing
 	 */
@@ -1803,7 +1958,7 @@ static int __init omap850_syren_init(void)
 	/*
 	 * UPLD Clocks
 	 */
-	
+/*	
 	reg = omap_readw(SOFT_REQ_REG);
 	reg |= SOFT_REQ_REG_EAC12M_DPLL_REQ;
 	omap_writew(reg, SOFT_REQ_REG);
@@ -1816,7 +1971,7 @@ static int __init omap850_syren_init(void)
 	reg |= CAM_CLK_CTRL_SYSTEM_CLK_EN;
 	omap_writew(reg, CAM_CLK_CTRL);
 
-	
+*/	
 	/*
 	 * GPIO pins setup to detect headset
 	 */
@@ -1828,119 +1983,116 @@ static int __init omap850_syren_init(void)
 	 */
 
 	// Audio Global Control Register 2
-	temp = omap850_eac_read(EAC_AGCTR);
+//	temp = omap850_eac_read(EAC_AGCTR);
 	// EAC in powerdown mode
-	temp |= EAC_AGCTR_EACPWD;
+//	temp |= EAC_AGCTR_EACPWD;
 	// Audio processing disabled
-	temp &= ~EAC_AGCTR_AUDEN;
-	omap850_eac_write(EAC_AGCTR, temp);
+//	temp &= ~EAC_AGCTR_AUDEN;
+//	omap850_eac_write(EAC_AGCTR, temp);
 
 	// Audio Global Configuration Register
-	temp = omap850_eac_read(EAC_AGCFR) & ~EAC_AGCFR_RESERVED;
+//	temp = omap850_eac_read(EAC_AGCFR) & EAC_AGCFR_RESERVED;
 	// stereo, 16 bit audio file
-	temp |= EAC_AGCFR_B8_16 | EAC_AGCFR_MN_ST;
+//	temp |= EAC_AGCFR_B8_16 | EAC_AGCFR_MN_ST;
 	// clock setting
-	temp |= EAC_AGCFR_AUD_CKSRC_12MHZ;
-	omap850_eac_write(EAC_AGCFR, temp);
-	printk(KERN_ALERT "Test value\n");
+//	temp |= EAC_AGCFR_AUD_CKSRC_12MHZ;
+//	omap850_eac_write(EAC_AGCFR, temp);
+//	printk(KERN_ALERT "Test value\n");
 	// EAC rev2 Intermediate sample frequency for DMA read and write operations
-	omap850_set_samplerate(AUDIO_RATE_DEFAULT);
+//	omap850_set_samplerate(AUDIO_RATE_DEFAULT);
 
 	// set clock on
-	omap850_setclock(1);
+//	omap850_setclock(1);
 
 	// Audio Mixer Switchs Configuration Register
-	omap850_eac_write(EAC_AMSCFR, 0xFEF); //0xFEF); //k5 = 0 becoz c-codec no input EAC_AMSCFR_DEFAULT_SWITCHES);
+//	omap850_eac_write(EAC_AMSCFR, 0xFEF); //0xFEF); //k5 = 0 becoz c-codec no input EAC_AMSCFR_DEFAULT_SWITCHES);
 	//omap850_eac_write((u16 *) EAC_AMSCFR, 0x0A00);
 
 	// Set default volume
 	// Default DMA volume
-	omap850_eac_write(EAC_AMVCTR, (DMA_DEFAULT_VOLUME << EAC_AMVCTR_RD_DMA_OFFSET) | (DMA_DEFAULT_VOLUME << EAC_AMVCTR_WR_DMA_OFFSET));
+//	omap850_eac_write(EAC_AMVCTR, (DMA_DEFAULT_VOLUME << EAC_AMVCTR_RD_DMA_OFFSET) | (DMA_DEFAULT_VOLUME << EAC_AMVCTR_WR_DMA_OFFSET));
 	// Line (GSM) & Mic input volume control
     //    eac_local.line = eac_local.mic = DEFAULT_INPUT_VOLUME;
-		eac_local.line = eac_local.mic = DEFAULT_VOLUME;
+//		eac_local.line = eac_local.mic = DEFAULT_VOLUME;
 
 	// MPU volume control
-        eac_local.volume = DEFAULT_VOLUME;
-        eac_update();
+  //      eac_local.volume = DEFAULT_VOLUME;
+    //    eac_update();
 	// No sidetone
-	temp = omap850_eac_read(EAC_ASTCTR);
-	temp &= ~EAC_ASTCTR_ATTEN;
-	omap850_eac_write(EAC_ASTCTR, temp);
+//	temp = omap850_eac_read(EAC_ASTCTR);
+//	temp &= ~EAC_ASTCTR_ATTEN;
+//	omap850_eac_write(EAC_ASTCTR, temp);
 
 	// Audio processing enable
-	temp = omap850_eac_read(EAC_AGCTR);
-	temp |= EAC_AGCTR_AUDEN;
-	omap850_eac_write(EAC_AGCTR, temp);
+//	temp = omap850_eac_read(EAC_AGCTR);
+//	temp |= EAC_AGCTR_AUDEN;
+//	omap850_eac_write(EAC_AGCTR, temp);
 
 	/*
 	 * Codec port setup
 	 */
 
 	// CODEC Port Interface Control and Status Register
-	temp = omap850_eac_read(EAC_CPTCTL) & ~EAC_CPTCTL_RESERVED;
+//	temp = omap850_eac_read(EAC_CPTCTL) & EAC_CPTCTL_RESERVED;
 	// CODEC RESET release , clear RECEIVE DATA REGISTER FULL and TRANSMIT DATA REGISTER EMPTY
-	/* after some investigations codec reset take some time -> need to add delay
-	 * because next reading of register will return different value  
-	 */
-	temp |= EAC_CPTCTL_CRST | EAC_CPTCTL_TXE | EAC_CPTCTL_RXF;
+//	temp |= EAC_CPTCTL_CRST | EAC_CPTCTL_TXE | EAC_CPTCTL_RXF;
 	// C_PORT ENABLE Disabled to configure some registers
-	temp &= ~EAC_CPTCTL_CPEN;
-	omap850_eac_write(EAC_CPTCTL, temp);
+//	temp &= ~EAC_CPTCTL_CPEN;
+//	omap850_eac_write(EAC_CPTCTL, temp);
 
 	// Codec Port Configuration Register 1
 	// Codec-Port interface mode: I2S mode, Number of time slots per audio frame: 2 time slots per frame
-	omap850_eac_write(EAC_CPCFR1, EAC_CPCFR1_MODE_I2S);
+//	omap850_eac_write(EAC_CPCFR1, EAC_CPCFR1_MODE_I2S);
 
 	// CODEC PORT CONFIGURATION REGISTER 2
-	omap850_eac_write(EAC_CPCFR2, EAC_CPCFR2_I2S_20BITS);
+//	omap850_eac_write(EAC_CPCFR2, EAC_CPCFR2_I2S_20BITS);
 
 	// CODEC PORT INTERFACE CONFIGURATION REGISTER 3
-	omap850_eac_write(EAC_CPCFR3, EAC_CPCFR3_I2S_INPUT);
+//	omap850_eac_write(EAC_CPCFR3, EAC_CPCFR3_I2S_INPUT);
 
 	// CODECPORT INTERFACE CONFIGURATION REGISTER 4
 	// DIVB Calc: (12000000/(2*16*44100))-1=7
-	omap850_eac_write(EAC_CPCFR4, EAC_CPCFR4_I2S_DIV7);
+//	omap850_eac_write(EAC_CPCFR4, EAC_CPCFR4_I2S_DIV7);
 
 	// CODEC Port Interface Control and Status Register
-	temp = omap850_eac_read(EAC_CPTCTL) & ~EAC_CPTCTL_RESERVED;
+//	temp = omap850_eac_read(EAC_CPTCTL) & EAC_CPTCTL_RESERVED;
 	// C_PORT ENABLE Enabled
-	temp |= EAC_CPTCTL_CPEN;
-	omap850_eac_write(EAC_CPTCTL, temp);
+//	temp |= EAC_CPTCTL_CPEN;
+//	omap850_eac_write(EAC_CPTCTL, temp);
 
 	/*
 	 * Modem port setup
 	 */
 
 	// Modem Port Control Register
-	omap850_eac_write(EAC_MPCTR, EAC_MPCTR_DISABLEALL);
+//	omap850_eac_write(EAC_MPCTR, EAC_MPCTR_DISABLEALL);
 
 	// Modem Port Main channel Configuration Register
-	omap850_eac_write(EAC_MPMCCFR, EAC_MPMCCFR_DEFAULT_MASTER_NOCOMP_16BITS);
+//	omap850_eac_write(EAC_MPMCCFR, EAC_MPMCCFR_DEFAULT_MASTER_NOCOMP_16BITS);
 
 	// Modem Port Control Register
-	temp = omap850_eac_read(EAC_MPCTR);
-	temp |= EAC_MPCTR_PRE_MC_16 | EAC_MPCTR_MC_EN;	// Prescaler and enable
-	omap850_eac_write(EAC_MPCTR, temp);
-	temp |= EAC_MPCTR_CKEN;				// Clocks running
-	omap850_eac_write(EAC_MPCTR, temp);
+//	temp = omap850_eac_read(EAC_MPCTR);
+//	temp |= EAC_MPCTR_PRE_MC_16 | EAC_MPCTR_MC_EN;	// Prescaler and enable
+//	omap850_eac_write(EAC_MPCTR, temp);
+//	temp |= EAC_MPCTR_CKEN;				// Clocks running
+//	omap850_eac_write(EAC_MPCTR, temp);
 
 	/*
 	 * Bluetooth port setup
 	 */
 
 	// Bluetooth Port Control Register
-	omap850_eac_write(EAC_BPCTR, EAC_BPCTR_DISABLEALL);
+//	omap850_eac_write(EAC_BPCTR, EAC_BPCTR_DISABLEALL);
 
 	// Bluetooth Port Main channel Configuration Register
-	omap850_eac_write(EAC_BPMCCFR, EAC_BPMCCFR_DEFAULT_SLAVE_NOCOMP_13BITS);
+//	omap850_eac_write(EAC_BPMCCFR, EAC_BPMCCFR_DEFAULT_SLAVE_NOCOMP_13BITS);
 
 	// Modem Port Control Register
-	temp = omap850_eac_read(EAC_BPCTR);
-	temp |= EAC_BPCTR_PRE_MC_16 | EAC_BPCTR_MC_EN;	// Prescaler and enable
-	omap850_eac_write(EAC_BPCTR, temp);
-	temp |= EAC_BPCTR_CKEN;				// Clocks running
-	omap850_eac_write(EAC_BPCTR, temp);
+//	temp = omap850_eac_read(EAC_BPCTR);
+//	temp |= EAC_BPCTR_PRE_MC_16 | EAC_BPCTR_MC_EN;	// Prescaler and enable
+//	omap850_eac_write(EAC_BPCTR, temp);
+//	temp |= EAC_BPCTR_CKEN;				// Clocks running
+//	omap850_eac_write(EAC_BPCTR, temp);
 
 #ifdef CONFIG_CEE  /* MVL-CCE */
 //FIXME         audio_ldm_device_register();
@@ -1950,6 +2102,9 @@ static int __init omap850_syren_init(void)
 	/*
 	 * Driver init
 	 */
+	syren_spi_init();
+	syren_audio_init();
+	syren_clocks_on();
 	op = &omap850_audio_fops;
 		
 	/* add missing file operations from audio */	
@@ -1990,6 +2145,7 @@ static void __exit omap850_syren_exit(void)
 	omap_audio_clear_buf(audio_state.output_stream);
 	omap_audio_clear_buf(audio_state.input_stream);
 	unregister_chrdev(199, "omap850_syren");
+	syren_clocks_off();
 
 #ifdef CONFIG_CEE  /* MVL-CCE */
         audio_ldm_device_unregister();

@@ -25,6 +25,6 @@ obj-$(CONFIG_INTEL_MENLOW)	+= intel_menlow.o
 obj-$(CONFIG_ENCLOSURE_SERVICES) += enclosure.o
 obj-$(CONFIG_HTCWIZARD_GSM)	+= gsm-wizard.o
 
-omap850_audio-objs    := omap850-audio.o omap850-syren.o
+#omap850_audio-objs    := omap850-audio.o omap850-syren.o
 
-obj-$(CONFIG_HTCWIZARD_AUDIO)	+= omap850_audio.o
+obj-$(CONFIG_HTCWIZARD_AUDIO)	+= omap850_audio/
